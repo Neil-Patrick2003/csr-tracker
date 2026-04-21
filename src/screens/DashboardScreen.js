@@ -425,7 +425,7 @@ export default function DashboardScreen({ route }) {
             colors={colors}
           />
           <SmallKpiCard
-            value={formatSeconds(kpi?.total_time ?? 0)}
+            value={formatSeconds(kpi?.total_talk_time ?? kpi?.total_time ?? 0)}
             label="Talk Time"
             color={colors.blue}
             colors={colors}
