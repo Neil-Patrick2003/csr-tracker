@@ -160,6 +160,7 @@ export default function DashboardScreen({ route }) {
     setLoadingKpi(true);
     try {
       const { data } = await getCallLogKpi(userId);
+      console.log("KPI Response:", JSON.stringify(data, null, 2));
       setKpi(data);
     } catch {
       // Silently fail
