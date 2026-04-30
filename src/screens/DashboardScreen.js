@@ -235,7 +235,7 @@ export default function DashboardScreen({ route }) {
         phone_number: log.phoneNumber || "",
         type: log.type || "UNKNOWN",
         duration: parseInt(log.duration, 10) || 0,
-        timestamp: log.dateTime || new Date(parseInt(log.timestamp, 10)).toISOString(),
+        timestamp: new Date(parseInt(log.timestamp, 10)).toISOString(),
       }));
 
       await syncCallLogs(userId, payload);
@@ -471,6 +471,40 @@ export default function DashboardScreen({ route }) {
             </Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          className="rounded-2xl p-4 mt-3 mx-0.5 flex-row items-center"
+          style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+          onPress={() => navigation.navigate("CallLogs")}
+          activeOpacity={0.7}
+        >
+          <View
+            className="w-10 h-10 rounded-xl items-center justify-center mr-3"
+            style={{ backgroundColor: colors.primary + "18" }}
+          >
+            <Text style={{ color: colors.primary, fontSize: 18, fontFamily: FONT.mono }}>{"☰"}</Text>
+          </View>
+          <View className="flex-1">
+            <Text
+              className="text-[13px] font-bold"
+              style={{ color: colors.text, fontFamily: FONT.mono }}
+            >
+              View call logs
+            </Text>
+            <Text
+              className="text-[10px] mt-0.5"
+              style={{ color: colors.textSecondary, fontFamily: FONT.mono }}
+            >
+              See every call and its sync status
+            </Text>
+          </View>
+          <Text
+            className="text-[18px] font-bold"
+            style={{ color: colors.muted, fontFamily: FONT.mono }}
+          >
+            {"›"}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Bottom Sync Button */}

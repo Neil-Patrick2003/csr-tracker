@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import SetupScreen from "../screens/SetupScreen";
 import DashboardScreen from "../screens/DashboardScreen";
+import CallLogsScreen from "../screens/CallLogsScreen";
 
 const Stack = createNativeStackNavigator();
 const USER_KEY = "@csr_tracker_user";
@@ -60,6 +61,7 @@ function AppStack() {
         component={DashboardScreen}
         initialParams={savedParams}
       />
+      <Stack.Screen name="CallLogs" component={CallLogsScreen} />
     </Stack.Navigator>
   );
 }

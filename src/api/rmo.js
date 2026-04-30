@@ -1,11 +1,11 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://artemis-dev.on-forge.com/api/v1/public",
+  baseURL: "https://stretchy-wanetta-unwinning.ngrok-free.dev/api/v1/public",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
-    "X-API-Key": "art_4TGgV4OLrHp5NCGXXuAi3pu0IV9F9eEhRiqLbjFj",
+    "X-API-Key": "art_Qt2XWGY1nTPF6ja484Re1UFii8DFJLLmlu9xOjdW",
   },
 });
 
@@ -25,3 +25,14 @@ export const getCallLogKpi = (userId, date) =>
       ...(date ? { date } : {}),
     },
   });
+
+export const getCallLogSummary = (userId, sinceTimestamp) =>
+  api.get("/call-logs/summary", {
+    params: {
+      user_id: userId,
+      ...(sinceTimestamp ? { since: sinceTimestamp } : {}),
+    },
+  });
+
+export const getCallLogs = (userId, sinceMs) =>
+  api.get("/call-logs/list", { params: { user_id: userId, since: sinceMs } });
