@@ -61,6 +61,35 @@ async function requestCallLogPermission() {
   }
 }
 
+function PowerIcon({ color, size = 14 }) {
+  const barWidth = 1.8;
+  const barHeight = size * 0.6;
+  return (
+    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          position: "absolute",
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 1.6,
+          borderColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          top: -2,
+          width: barWidth,
+          height: barHeight,
+          backgroundColor: color,
+          borderRadius: barWidth / 2,
+        }}
+      />
+    </View>
+  );
+}
+
 function KpiCard({ value, label, color, colors, accent }) {
   return (
     <View
@@ -160,7 +189,6 @@ export default function DashboardScreen({ route }) {
     setLoadingKpi(true);
     try {
       const { data } = await getCallLogKpi(userId);
-      console.log("KPI Response:", JSON.stringify(data, null, 2));
       setKpi(data);
     } catch {
       // Silently fail
@@ -331,7 +359,7 @@ export default function DashboardScreen({ route }) {
                 onPress={handleLogout}
                 activeOpacity={0.6}
               >
-                <Text className="text-[12px]" style={{ color: hasUnsynced ? "rgba(255,255,255,0.4)" : "#FCA5A5" }}>{"\u23FB"}</Text>
+                <PowerIcon color={hasUnsynced ? "rgba(255,255,255,0.4)" : "#FCA5A5"} />
               </TouchableOpacity>
             </View>
           </View>
@@ -384,7 +412,7 @@ export default function DashboardScreen({ route }) {
         <View className="flex-row mb-3">
           <KpiCard
             value={kpi?.total_called ?? 0}
-            label="Total Called"
+            label="Total Order Called"
             color={colors.primary}
             colors={colors}
             accent={colors.primary}
