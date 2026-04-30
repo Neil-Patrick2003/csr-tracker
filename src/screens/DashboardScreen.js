@@ -1,14 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   Alert,
   ActivityIndicator,
   PermissionsAndroid,
   Platform,
   ScrollView,
   AppState,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,16 +17,21 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import CallLog from "react-native-call-log";
 import { useTheme } from "../context/ThemeContext";
 import { FONT } from "../constants/theme";
-import { syncCallLogs, getCallLogKpi } from "../api/rmo";
+import { syncCallLogs, getCallLogKpi, getCallLogs } from "../api/rmo";
+import Icon from "../components/Icon";
+import PressableScale from "../components/PressableScale";
+import FadeSlideIn from "../components/FadeSlideIn";
+import SettingsSheet from "../components/SettingsSheet";
 
 const LOGIN_TIME_KEY = "@csr_tracker_login_time";
 const SYNC_STATE_KEY = "@csr_tracker_sync_state";
 
 function formatSeconds(sec) {
-  if (!sec || sec <= 0) return "0s";
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
+  const v = Number(sec) || 0;
+  if (v <= 0) return "0s";
+  const h = Math.floor(v / 3600);
+  const m = Math.floor((v % 3600) / 60);
+  const s = Math.floor(v % 60);
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s.toString().padStart(2, "0")}s`;
   return `${s}s`;
@@ -34,14 +39,51 @@ function formatSeconds(sec) {
 
 function formatTime(ts) {
   if (!ts) return "--:--";
-  const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(ts).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-function formatFullTime(ts) {
-  if (!ts) return "--:--:--";
-  const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function formatRecentDate(ts) {
+  if (!ts) return "";
+  const d = new Date(parseInt(ts, 10));
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  const date = sameDay
+    ? "Today"
+    : d.toLocaleDateString([], { month: "short", day: "2-digit" });
+  const time = d.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return { date, time };
+}
+
+function utcKey(ts, phoneNumber) {
+  const iso = new Date(parseInt(ts, 10)).toISOString();
+  const [date, timePart] = iso.split("T");
+  const time = timePart.split(".")[0];
+  return `${phoneNumber || ""}|${date}|${time}`;
+}
+
+function typeIconName(type) {
+  const t = (type || "").toUpperCase();
+  if (t === "INCOMING") return "phone-in";
+  if (t === "OUTGOING") return "phone-out";
+  if (t === "MISSED" || t === "REJECTED") return "phone-missed";
+  return null;
+}
+
+function typeColor(type, colors) {
+  const t = (type || "").toUpperCase();
+  if (t === "INCOMING") return colors.blue;
+  if (t === "OUTGOING") return colors.green;
+  if (t === "MISSED" || t === "REJECTED") return colors.red;
+  return colors.muted;
 }
 
 async function requestCallLogPermission() {
@@ -61,54 +103,54 @@ async function requestCallLogPermission() {
   }
 }
 
-function PowerIcon({ color, size = 14 }) {
-  const barWidth = 1.8;
-  const barHeight = size * 0.6;
+function HeaderChip({ children, onPress, bg, borderColor }) {
   return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+    <PressableScale onPress={onPress} scaleTo={0.88}>
       <View
+        className="w-9 h-9 rounded-2xl items-center justify-center"
         style={{
-          position: "absolute",
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: 1.6,
-          borderColor: color,
+          backgroundColor: bg,
+          borderWidth: 1,
+          borderColor: borderColor,
         }}
-      />
-      <View
-        style={{
-          position: "absolute",
-          top: -2,
-          width: barWidth,
-          height: barHeight,
-          backgroundColor: color,
-          borderRadius: barWidth / 2,
-        }}
-      />
-    </View>
+      >
+        {children}
+      </View>
+    </PressableScale>
   );
 }
 
-function KpiCard({ value, label, color, colors, accent }) {
+function KpiTile({ label, value, accent, colors }) {
   return (
     <View
-      className="flex-1 rounded-2xl p-4 mx-1.5"
+      className="rounded-xl p-3.5"
       style={{
-        backgroundColor: accent ? accent + "10" : colors.card,
+        backgroundColor: colors.card,
         borderWidth: 1,
-        borderColor: accent ? accent + "25" : colors.border,
+        borderColor: colors.border,
+        flex: 1,
+        minHeight: 78,
       }}
     >
       <Text
-        className="font-bold mb-2"
-        style={{ color: colors.muted, letterSpacing: 0.6, fontSize: 8, textTransform: "uppercase" }}
+        className="font-bold"
+        style={{
+          color: colors.textSecondary,
+          letterSpacing: 0.4,
+          fontSize: 11,
+        }}
+        numberOfLines={2}
       >
         {label}
       </Text>
       <Text
-        className="font-bold"
-        style={{ color, fontFamily: FONT.mono, fontSize: 26, lineHeight: 30 }}
+        className="font-bold mt-2"
+        style={{
+          color: accent || colors.text,
+          fontFamily: FONT.mono,
+          fontSize: 20,
+          letterSpacing: -0.5,
+        }}
       >
         {value}
       </Text>
@@ -116,20 +158,60 @@ function KpiCard({ value, label, color, colors, accent }) {
   );
 }
 
-function SmallKpiCard({ value, label, color, colors }) {
+function CallRow({ log, synced, colors }) {
+  const display =
+    log.name && log.name.length > 0 ? log.name : log.phoneNumber || "Unknown";
+  const meta = formatRecentDate(log.timestamp);
+  const tIcon = typeIconName(log.type);
+  const tColor = typeColor(log.type, colors);
   return (
-    <View
-      className="flex-1 rounded-xl p-3 mx-1"
-      style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
-    >
-      <Text
-        className="font-bold mb-1.5"
-        style={{ color: colors.muted, letterSpacing: 0.6, fontSize: 7, textTransform: "uppercase" }}
+    <View className="flex-row items-center py-3">
+      <View
+        className="w-10 h-10 rounded-full items-center justify-center mr-3"
+        style={{ backgroundColor: colors.glass }}
       >
-        {label}
-      </Text>
-      <Text className="font-bold" style={{ color, fontFamily: FONT.mono, fontSize: 16, lineHeight: 20 }}>
-        {value}
+        <Icon name="user" size={18} color={colors.muted} />
+      </View>
+      <View className="flex-1">
+        <Text
+          className="text-[15px] font-semibold"
+          style={{ color: colors.text, fontFamily: FONT.mono }}
+          numberOfLines={1}
+        >
+          {display}
+        </Text>
+        <View className="flex-row items-center mt-0.5">
+          {tIcon && (
+            <View style={{ marginRight: 4 }}>
+              <Icon name={tIcon} size={11} color={tColor} />
+            </View>
+          )}
+          <Text
+            className="text-[11px]"
+            style={{ color: colors.textSecondary, fontFamily: FONT.mono }}
+          >
+            {meta.date}
+          </Text>
+          <Text className="text-[11px] mx-1" style={{ color: colors.muted }}>
+            {"•"}
+          </Text>
+          <Text
+            className="text-[11px]"
+            style={{ color: colors.textSecondary, fontFamily: FONT.mono }}
+          >
+            {meta.time}
+          </Text>
+        </View>
+      </View>
+      <Text
+        className="font-bold italic"
+        style={{
+          color: synced ? colors.green : colors.amber,
+          fontSize: 11,
+          fontFamily: FONT.mono,
+        }}
+      >
+        {synced ? "Synced" : "Pending"}
       </Text>
     </View>
   );
@@ -151,6 +233,9 @@ export default function DashboardScreen({ route }) {
   const [lastSync, setLastSync] = useState(null);
   const [syncedCount, setSyncedCount] = useState(0);
   const [kpi, setKpi] = useState(null);
+  const [syncedKeys, setSyncedKeys] = useState(new Set());
+  const [refreshing, setRefreshing] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     requestCallLogPermission().then(setHasPermission);
@@ -171,7 +256,6 @@ export default function DashboardScreen({ route }) {
     });
   }, [userId]);
 
-  // Restore sync state from storage
   useEffect(() => {
     AsyncStorage.getItem(SYNC_STATE_KEY).then((val) => {
       if (val) {
@@ -191,11 +275,28 @@ export default function DashboardScreen({ route }) {
       const { data } = await getCallLogKpi(userId);
       setKpi(data);
     } catch {
-      // Silently fail
+      // silent
     } finally {
       setLoadingKpi(false);
     }
   }, [userId]);
+
+  const fetchSyncedKeys = useCallback(async () => {
+    if (!userId || !loginTime) return;
+    try {
+      const { data } = await getCallLogs(userId, loginTime);
+      const list = data?.data || [];
+      setSyncedKeys(
+        new Set(
+          list.map(
+            (r) => `${r.phone_number || ""}|${r.call_date}|${r.call_time}`
+          )
+        )
+      );
+    } catch {
+      // silent
+    }
+  }, [userId, loginTime]);
 
   const loadCallLogs = useCallback(async () => {
     if (!hasPermission || !loginTime) return;
@@ -204,7 +305,10 @@ export default function DashboardScreen({ route }) {
       const logs = await CallLog.load(-1, { minTimestamp: loginTime });
       setCallLogs(logs || []);
     } catch (err) {
-      Alert.alert("Error", "Failed to load call logs: " + (err.message || "Unknown error"));
+      Alert.alert(
+        "Error",
+        "Failed to load call logs: " + (err.message || "Unknown error")
+      );
     } finally {
       setLoadingLogs(false);
     }
@@ -214,12 +318,9 @@ export default function DashboardScreen({ route }) {
     if (loginTime && hasPermission) loadCallLogs();
   }, [loginTime, hasPermission]);
 
-  // Reload call logs when app returns to foreground (e.g. after a phone call)
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && loginTime && hasPermission) {
-        loadCallLogs();
-      }
+      if (state === "active" && loginTime && hasPermission) loadCallLogs();
     });
     return () => sub.remove();
   }, [loginTime, hasPermission, loadCallLogs]);
@@ -227,6 +328,16 @@ export default function DashboardScreen({ route }) {
   useEffect(() => {
     fetchKpi();
   }, [fetchKpi]);
+
+  useEffect(() => {
+    fetchSyncedKeys();
+  }, [fetchSyncedKeys]);
+
+  const handlePullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchKpi(), loadCallLogs(), fetchSyncedKeys()]);
+    setRefreshing(false);
+  }, [fetchKpi, loadCallLogs, fetchSyncedKeys]);
 
   const handleSync = useCallback(async () => {
     if (!hasPermission) {
@@ -241,11 +352,10 @@ export default function DashboardScreen({ route }) {
       allLogs = logs || [];
       setCallLogs(allLogs);
     } catch {
-      // fallback to existing
+      // fallback
     }
     setLoadingLogs(false);
 
-    // Only sync logs that came after the last sync
     const sinceTime = lastSync || loginTime;
     const newLogs = allLogs.filter((log) => {
       const logTime = log.timestamp ? parseInt(log.timestamp, 10) : 0;
@@ -271,27 +381,39 @@ export default function DashboardScreen({ route }) {
       setLastSync(now);
       const newSyncedCount = syncedCount + newLogs.length;
       setSyncedCount(newSyncedCount);
-      AsyncStorage.setItem(SYNC_STATE_KEY, JSON.stringify({
-        userId,
-        lastSync: now,
-        syncedCount: newSyncedCount,
-      }));
+      AsyncStorage.setItem(
+        SYNC_STATE_KEY,
+        JSON.stringify({ userId, lastSync: now, syncedCount: newSyncedCount })
+      );
       Alert.alert("Synced", `${payload.length} new call logs synced.`);
       fetchKpi();
+      fetchSyncedKeys();
     } catch (err) {
       const msg = err.response?.data?.message || err.message || "Sync failed";
       Alert.alert("Sync Error", msg);
     } finally {
       setSyncing(false);
     }
-  }, [loginTime, lastSync, syncedCount, callLogs, userId, hasPermission, fetchKpi]);
+  }, [
+    loginTime,
+    lastSync,
+    syncedCount,
+    callLogs,
+    userId,
+    hasPermission,
+    fetchKpi,
+    fetchSyncedKeys,
+  ]);
 
-  const unsyncedCount = callLogs.length - syncedCount;
+  const unsyncedCount = Math.max(0, callLogs.length - syncedCount);
   const hasUnsynced = unsyncedCount > 0;
 
   const handleLogout = useCallback(() => {
     if (hasUnsynced) {
-      Alert.alert("Sync Required", "Please sync your call logs before logging out.");
+      Alert.alert(
+        "Sync Required",
+        "Please sync your call logs before logging out."
+      );
       return;
     }
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -300,288 +422,350 @@ export default function DashboardScreen({ route }) {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          await AsyncStorage.multiRemove(["@csr_tracker_user", LOGIN_TIME_KEY, SYNC_STATE_KEY]);
-          navigation.replace("Setup");
+          await AsyncStorage.multiRemove([
+            "@csr_tracker_user",
+            LOGIN_TIME_KEY,
+            SYNC_STATE_KEY,
+          ]);
+          navigation.replace("Welcome");
         },
       },
     ]);
   }, [navigation, hasUnsynced]);
 
-  const loading = loadingLogs || loadingKpi;
+  const recentCalls = callLogs.slice(0, 6);
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: colors.ink }} edges={[]}>
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: insets.top,
-          backgroundColor: colors.primary,
-          shadowColor: colors.primary,
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.2,
-          shadowRadius: 16,
-          elevation: 12,
-        }}
-      >
-        <View className="px-5 pt-3 pb-4">
-          <View className="flex-row items-center justify-between mb-3">
-            <Text
-              className="text-[20px] font-bold"
-              style={{ color: "#fff", fontFamily: FONT.mono, letterSpacing: -0.5 }}
-            >
-              Call Logs
-            </Text>
-            <View className="flex-row items-center gap-2">
-              <TouchableOpacity
-                className="w-9 h-9 rounded-xl items-center justify-center"
-                style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
-                onPress={() => { fetchKpi(); loadCallLogs(); }}
-                activeOpacity={0.6}
-              >
-                <Text className="text-[14px]" style={{ color: "#fff" }}>{"\u21BB"}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="w-9 h-9 rounded-xl items-center justify-center"
-                style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
-                onPress={toggle}
-                activeOpacity={0.6}
-              >
-                <Text className="text-[13px]" style={{ color: "#fff" }}>
-                  {mode === "dark" ? "\u2600\uFE0E" : "\u263E"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="w-9 h-9 rounded-xl items-center justify-center"
-                style={{
-                  backgroundColor: hasUnsynced ? "rgba(255,255,255,0.08)" : "rgba(239,68,68,0.3)",
-                  opacity: hasUnsynced ? 0.4 : 1,
-                }}
-                onPress={handleLogout}
-                activeOpacity={0.6}
-              >
-                <PowerIcon color={hasUnsynced ? "rgba(255,255,255,0.4)" : "#FCA5A5"} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Agent info bar */}
-          <View
-            className="flex-row items-center rounded-xl px-3.5 py-2.5"
-            style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
+    <SafeAreaView
+      className="flex-1"
+      style={{ backgroundColor: colors.surface }}
+      edges={[]}
+    >
+      <View style={{ paddingTop: 10 }}>
+        {/* Top bar: brand + avatar (avatar opens settings) */}
+        <View className="flex-row items-center justify-between px-5 pb-1">
+          <Text
+            className="text-[22px] font-bold"
+            style={{
+              color: colors.primary,
+              fontFamily: FONT.mono,
+              letterSpacing: -0.5,
+            }}
           >
+            CallSync
+          </Text>
+          <PressableScale onPress={() => setSettingsOpen(true)} scaleTo={0.9}>
             <View
-              className="w-8 h-8 rounded-full items-center justify-center mr-3"
-              style={{ backgroundColor: "rgba(255,255,255,0.2)" }}
+              className="w-9 h-9 rounded-full items-center justify-center"
+              style={{ backgroundColor: colors.primary }}
             >
-              <Text className="text-[12px] font-bold" style={{ color: "#fff" }}>
-                {agentName?.charAt(0)?.toUpperCase() || "?"}
-              </Text>
-            </View>
-            <View className="flex-1">
               <Text
                 className="text-[13px] font-bold"
                 style={{ color: "#fff", fontFamily: FONT.mono }}
-                numberOfLines={1}
               >
-                {agentName}
-              </Text>
-              <Text
-                className="text-[9px] mt-0.5"
-                style={{ color: "rgba(255,255,255,0.55)", fontFamily: FONT.mono }}
-              >
-                Session started {loginTime ? formatTime(loginTime) : "--:--"}
+                {agentName?.charAt(0)?.toUpperCase() || "?"}
               </Text>
             </View>
-            {loading && <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />}
-          </View>
+          </PressableScale>
         </View>
       </View>
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
-        {/* Main KPIs */}
-        <Text
-          className="font-bold mb-3 ml-1"
-          style={{ color: colors.textSecondary, letterSpacing: 1, fontSize: 10 }}
-        >
-          OVERVIEW
-        </Text>
-        <View className="flex-row mb-3">
-          <KpiCard
-            value={kpi?.total_called ?? 0}
-            label="Total Order Called"
-            color={colors.primary}
-            colors={colors}
-            accent={colors.primary}
-          />
-          <KpiCard
-            value={kpi?.total_orders ?? 0}
-            label="Total Orders"
-            color={colors.blue}
-            colors={colors}
-            accent={colors.blue}
-          />
-          <KpiCard
-            value={kpi?.total_attempts ?? 0}
-            label="Attempts"
-            color={colors.amber}
-            colors={colors}
-            accent={colors.amber}
-          />
-        </View>
-
-        {/* Secondary KPIs */}
-        <Text
-          className="font-bold mb-3 mt-3 ml-1"
-          style={{ color: colors.textSecondary, letterSpacing: 1, fontSize: 10 }}
-        >
-          BREAKDOWN
-        </Text>
-        <View className="flex-row mb-3">
-          <SmallKpiCard
-            value={kpi?.customers_called ?? 0}
-            label="Customers"
-            color={colors.green}
-            colors={colors}
-          />
-          <SmallKpiCard
-            value={kpi?.riders_called ?? 0}
-            label="Riders"
-            color={colors.amber}
-            colors={colors}
-          />
-          <SmallKpiCard
-            value={formatSeconds(kpi?.total_talk_time ?? kpi?.total_time ?? 0)}
-            label="Talk Time"
-            color={colors.blue}
-            colors={colors}
-          />
-        </View>
-
-        {/* Device status card */}
-        <View
-          className="rounded-2xl p-4 mt-3 mx-0.5"
-          style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
-        >
-          <Text
-            className="font-bold mb-3"
-            style={{ color: colors.textSecondary, letterSpacing: 1, fontSize: 9 }}
-          >
-            DEVICE STATUS
-          </Text>
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-[12px]" style={{ color: colors.muted }}>Call logs in this device (current session)</Text>
-            <Text className="text-[13px] font-bold" style={{ color: colors.text, fontFamily: FONT.mono }}>
-              {callLogs.length}
-            </Text>
-          </View>
-          <View
-            className="mb-2"
-            style={{ height: 1, backgroundColor: colors.border }}
-          />
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-[12px]" style={{ color: colors.muted }}>Session started</Text>
-            <Text className="text-[13px] font-bold" style={{ color: colors.text, fontFamily: FONT.mono }}>
-              {loginTime ? formatFullTime(loginTime) : "--:--:--"}
-            </Text>
-          </View>
-          <View
-            className="mb-2"
-            style={{ height: 1, backgroundColor: colors.border }}
-          />
-          <View className="flex-row items-center justify-between">
-            <Text className="text-[12px]" style={{ color: colors.muted }}>Last synced</Text>
-            <Text className="text-[13px] font-bold" style={{ color: lastSync ? colors.green : colors.muted, fontFamily: FONT.mono }}>
-              {lastSync ? formatFullTime(lastSync) : "Not yet"}
-            </Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          className="rounded-2xl p-4 mt-3 mx-0.5 flex-row items-center"
-          style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
-          onPress={() => navigation.navigate("CallLogs")}
-          activeOpacity={0.7}
-        >
-          <View
-            className="w-10 h-10 rounded-xl items-center justify-center mr-3"
-            style={{ backgroundColor: colors.primary + "18" }}
-          >
-            <Text style={{ color: colors.primary, fontSize: 18, fontFamily: FONT.mono }}>{"☰"}</Text>
-          </View>
-          <View className="flex-1">
+        {/* Welcome */}
+        <FadeSlideIn delay={40}>
+          <View className="px-5 mt-3">
             <Text
-              className="text-[13px] font-bold"
-              style={{ color: colors.text, fontFamily: FONT.mono }}
+              className="text-[24px] font-bold"
+              style={{ color: colors.text, letterSpacing: -0.5 }}
             >
-              View call logs
+              Welcome back,
             </Text>
             <Text
-              className="text-[10px] mt-0.5"
-              style={{ color: colors.textSecondary, fontFamily: FONT.mono }}
+              className="text-[13px] mt-1"
+              style={{ color: colors.textSecondary }}
             >
-              See every call and its sync status
+              Let's review your calls and celebrate your progress
             </Text>
           </View>
-          <Text
-            className="text-[18px] font-bold"
-            style={{ color: colors.muted, fontFamily: FONT.mono }}
-          >
-            {"›"}
-          </Text>
-        </TouchableOpacity>
+        </FadeSlideIn>
+
+        {/* Session card */}
+        <FadeSlideIn delay={120}>
+          <View className="px-5 mt-4">
+            <View
+              className="rounded-xl p-4 flex-row items-center"
+              style={{
+                backgroundColor: colors.card,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View
+                className="w-12 h-12 rounded-xl items-center justify-center mr-4"
+                style={{ backgroundColor: colors.glass }}
+              >
+                <Icon name="phone" size={22} color={colors.text} />
+              </View>
+              <View className="flex-1">
+                <View className="flex-row justify-between items-center">
+                  <Text
+                    className="text-[12px]"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    Call Logs in this session
+                  </Text>
+                  <Text
+                    className="text-[13px] font-bold"
+                    style={{ color: colors.text, fontFamily: FONT.mono }}
+                  >
+                    {callLogs.length} items
+                  </Text>
+                </View>
+                <View className="flex-row justify-between items-center mt-1.5">
+                  <Text
+                    className="text-[12px]"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    Session Started
+                  </Text>
+                  <Text
+                    className="text-[12px]"
+                    style={{ color: colors.text, fontFamily: FONT.mono }}
+                  >
+                    {loginTime ? formatTime(loginTime) : "--:--"}
+                  </Text>
+                </View>
+                <View className="flex-row justify-between items-center mt-1">
+                  <Text
+                    className="text-[12px]"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    Last Sync
+                  </Text>
+                  <Text
+                    className="text-[12px]"
+                    style={{
+                      color: lastSync ? colors.green : colors.muted,
+                      fontFamily: FONT.mono,
+                    }}
+                  >
+                    {lastSync ? formatTime(lastSync) : "Not yet"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </FadeSlideIn>
+
+        {/* Overview */}
+        <FadeSlideIn delay={200}>
+          <View className="px-5 mt-5">
+            <Text
+              className="text-[16px] font-bold mb-3"
+              style={{ color: colors.text }}
+            >
+              Overview
+            </Text>
+            <View className="flex-row" style={{ gap: 10 }}>
+              <KpiTile
+                label="Total Order Called"
+                value={kpi?.total_called ?? 0}
+                accent={colors.primary}
+                colors={colors}
+              />
+              <KpiTile
+                label="Total Order"
+                value={kpi?.total_orders ?? 0}
+                accent={colors.blue}
+                colors={colors}
+              />
+            </View>
+            <View className="flex-row mt-2.5" style={{ gap: 10 }}>
+              <KpiTile
+                label="Total Attempts"
+                value={kpi?.total_attempts ?? 0}
+                accent={colors.amber}
+                colors={colors}
+              />
+              <KpiTile
+                label="Total Talk Time"
+                value={formatSeconds(
+                  kpi?.total_talk_time ?? kpi?.total_time ?? 0
+                )}
+                accent={colors.text}
+                colors={colors}
+              />
+            </View>
+            <View className="flex-row mt-2.5" style={{ gap: 10 }}>
+              <KpiTile
+                label="Riders"
+                value={kpi?.riders_called ?? 0}
+                accent={colors.amber}
+                colors={colors}
+              />
+              <KpiTile
+                label="Customers"
+                value={kpi?.customers_called ?? 0}
+                accent={colors.green}
+                colors={colors}
+              />
+            </View>
+          </View>
+        </FadeSlideIn>
+
+        {/* Recent Call */}
+        <FadeSlideIn delay={300}>
+          <View className="px-5 mt-5">
+            <View className="flex-row items-center justify-between mb-1">
+              <Text
+                className="text-[16px] font-bold"
+                style={{ color: colors.text }}
+              >
+                Recent Call
+              </Text>
+              <PressableScale
+                onPress={() => navigation.navigate("CallLogs")}
+                scaleTo={0.9}
+                hitSlop={10}
+              >
+                <Text
+                  className="text-[13px] font-semibold"
+                  style={{ color: colors.primary }}
+                >
+                  View All
+                </Text>
+              </PressableScale>
+            </View>
+            <View
+              className="rounded-xl px-3 mt-2"
+              style={{
+                backgroundColor: colors.card,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              {recentCalls.length === 0 ? (
+                <View className="py-10 items-center">
+                  <Text
+                    className="text-[12px]"
+                    style={{
+                      color: colors.muted,
+                      fontFamily: FONT.mono,
+                      letterSpacing: 0.4,
+                    }}
+                  >
+                    {loadingLogs
+                      ? "Loading calls..."
+                      : "No calls in this session yet"}
+                  </Text>
+                </View>
+              ) : (
+                recentCalls.map((log, idx) => {
+                  const k = utcKey(log.timestamp, log.phoneNumber);
+                  return (
+                    <View
+                      key={`${log.timestamp || idx}-${idx}`}
+                      style={{
+                        borderTopWidth: idx === 0 ? 0 : 1,
+                        borderTopColor: colors.border,
+                      }}
+                    >
+                      <CallRow
+                        log={log}
+                        synced={syncedKeys.has(k)}
+                        colors={colors}
+                      />
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          </View>
+        </FadeSlideIn>
       </ScrollView>
 
       {/* Bottom Sync Button */}
       <View
-        className="px-5 pt-3"
+        className="px-5"
         style={{
-          backgroundColor: colors.ink,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingTop: 8,
           paddingBottom: insets.bottom + 16,
+          backgroundColor: colors.surface,
         }}
       >
-        <TouchableOpacity
-          className="rounded-2xl py-4.5 items-center"
-          style={{
-            backgroundColor: syncing ? colors.primaryDim : colors.primary,
-            opacity: syncing ? 0.8 : 1,
-            paddingVertical: 18,
-            shadowColor: colors.primary,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: syncing ? 0 : 0.3,
-            shadowRadius: 12,
-            elevation: syncing ? 0 : 8,
-          }}
-          onPress={handleSync}
-          disabled={syncing}
-          activeOpacity={0.7}
-        >
-          {syncing ? (
-            <View className="flex-row items-center gap-2.5">
-              <ActivityIndicator size="small" color="#fff" />
-              <Text className="text-[15px] font-bold" style={{ color: "#fff", fontFamily: FONT.mono }}>
-                Syncing...
-              </Text>
-            </View>
-          ) : (
-            <View className="items-center">
-              <Text className="text-[15px] font-bold" style={{ color: "#fff", fontFamily: FONT.mono }}>
-                {"\u21C5"}  Sync Call Logs
-              </Text>
-              {unsyncedCount > 0 && (
-                <Text className="text-[10px] mt-1" style={{ color: "rgba(255,255,255,0.6)", fontFamily: FONT.mono }}>
-                  {unsyncedCount} unsynced logs
+        <PressableScale onPress={handleSync} disabled={syncing}>
+          <View
+            className="rounded-full items-center justify-center"
+            style={{
+              backgroundColor: syncing ? colors.primaryDim : colors.primary,
+              paddingVertical: 16,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: syncing ? 0 : 0.32,
+              shadowRadius: 14,
+              elevation: syncing ? 0 : 10,
+            }}
+          >
+            {syncing ? (
+              <View className="flex-row items-center">
+                <ActivityIndicator size="small" color="#fff" />
+                <Text
+                  className="text-[15px] font-bold ml-2"
+                  style={{
+                    color: "#fff",
+                    fontFamily: FONT.mono,
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  Syncing...
                 </Text>
-              )}
-            </View>
-          )}
-        </TouchableOpacity>
+              </View>
+            ) : (
+              <Text
+                className="text-[15px] font-bold"
+                style={{
+                  color: "#fff",
+                  fontFamily: FONT.mono,
+                  letterSpacing: 0.4,
+                }}
+              >
+                Sync ({callLogs.length} items)
+              </Text>
+            )}
+          </View>
+        </PressableScale>
       </View>
+
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        agentName={agentName}
+        mode={mode}
+        onToggleTheme={toggle}
+        onHelp={() => {
+          setSettingsOpen(false);
+          navigation.navigate("Help");
+        }}
+        onLogout={handleLogout}
+        hasUnsynced={hasUnsynced}
+        colors={colors}
+      />
     </SafeAreaView>
   );
 }

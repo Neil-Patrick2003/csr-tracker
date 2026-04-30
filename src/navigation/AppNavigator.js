@@ -4,16 +4,17 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
-import SetupScreen from "../screens/SetupScreen";
+import WelcomeScreen from "../screens/WelcomeScreen";
 import DashboardScreen from "../screens/DashboardScreen";
 import CallLogsScreen from "../screens/CallLogsScreen";
+import HelpScreen from "../screens/HelpScreen";
 
 const Stack = createNativeStackNavigator();
 const USER_KEY = "@csr_tracker_user";
 
-function SetupWrapper({ navigation }) {
+function WelcomeWrapper({ navigation }) {
   return (
-    <SetupScreen
+    <WelcomeScreen
       onSubmit={async ({ userId, agentName }) => {
         await AsyncStorage.setItem(USER_KEY, JSON.stringify({ userId, agentName }));
         navigation.replace("Dashboard", { userId, agentName });
@@ -33,7 +34,7 @@ function AppStack() {
         setSavedParams(JSON.parse(value));
         setInitialRoute("Dashboard");
       } else {
-        setInitialRoute("Setup");
+        setInitialRoute("Welcome");
       }
     });
   }, []);
@@ -55,13 +56,14 @@ function AppStack() {
         animation: "fade",
       }}
     >
-      <Stack.Screen name="Setup" component={SetupWrapper} />
+      <Stack.Screen name="Welcome" component={WelcomeWrapper} />
       <Stack.Screen
         name="Dashboard"
         component={DashboardScreen}
         initialParams={savedParams}
       />
       <Stack.Screen name="CallLogs" component={CallLogsScreen} />
+      <Stack.Screen name="Help" component={HelpScreen} />
     </Stack.Navigator>
   );
 }
