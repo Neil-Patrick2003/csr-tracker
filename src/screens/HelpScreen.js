@@ -32,7 +32,7 @@ const FAQS = [
   {
     icon: "mail",
     title: "Need to report something?",
-    body: "Reach the team at the on-forge support channel. Include your agent name and the time of the issue so we can look it up quickly.",
+    body: "Reach the team via the Meta Support channel. Include your agent name and the time of the issue so we can look it up quickly.",
   },
 ];
 
@@ -83,7 +83,7 @@ export default function HelpScreen() {
       style={{ backgroundColor: colors.surface }}
       edges={[]}
     >
-      <View style={{ paddingTop: 10 }}>
+      <View style={{ paddingTop: 22 }}>
         <View className="flex-row items-center justify-between px-5 pb-2">
           <View className="flex-row items-center">
             <PressableScale onPress={() => navigation.goBack()} scaleTo={0.88}>

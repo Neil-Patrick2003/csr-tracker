@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
+import { ToastProvider } from "../components/Toast";
 import WelcomeScreen from "../screens/WelcomeScreen";
 import DashboardScreen from "../screens/DashboardScreen";
 import CallLogsScreen from "../screens/CallLogsScreen";
@@ -70,10 +72,14 @@ function AppStack() {
 
 export default function AppNavigator() {
   return (
-    <ThemeProvider>
-      <NavigationContainer>
-        <AppStack />
-      </NavigationContainer>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <NavigationContainer>
+            <AppStack />
+          </NavigationContainer>
+        </ToastProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

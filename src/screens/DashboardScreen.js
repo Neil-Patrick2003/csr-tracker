@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,16 @@ import {
   ScrollView,
   AppState,
   RefreshControl,
+  Animated,
+  StyleSheet,
 } from "react-native";
+import Svg, {
+  Defs,
+  RadialGradient,
+  Stop,
+  Rect,
+  Circle as SvgCircle,
+} from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -22,9 +31,13 @@ import Icon from "../components/Icon";
 import PressableScale from "../components/PressableScale";
 import FadeSlideIn from "../components/FadeSlideIn";
 import SettingsSheet from "../components/SettingsSheet";
+import { useToast } from "../components/Toast";
+import Skeleton from "../components/Skeleton";
+import PermissionRationale from "../components/PermissionRationale";
 
 const LOGIN_TIME_KEY = "@csr_tracker_login_time";
 const SYNC_STATE_KEY = "@csr_tracker_sync_state";
+const PERMISSION_SEEN_KEY = "@csr_tracker_permission_seen";
 
 function formatSeconds(sec) {
   const v = Number(sec) || 0;
@@ -46,21 +59,36 @@ function formatTime(ts) {
 }
 
 function formatRecentDate(ts) {
-  if (!ts) return "";
-  const d = new Date(parseInt(ts, 10));
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  const date = sameDay
-    ? "Today"
-    : d.toLocaleDateString([], { month: "short", day: "2-digit" });
+  if (!ts) return { date: "", time: "" };
+  const t = parseInt(ts, 10);
+  const d = new Date(t);
+  const now = Date.now();
+  const diff = now - t;
+  const min = Math.floor(diff / 60000);
+  const hr = Math.floor(diff / 3600000);
   const time = d.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
-  return { date, time };
+  if (diff < 45000) return { date: "Just now", time };
+  if (min < 60) return { date: `${min}m ago`, time };
+  if (hr < 6) return { date: `${hr}h ago`, time };
+  const today = new Date(now);
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  const yesterday = new Date(now - 86400000);
+  const wasYesterday =
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate();
+  if (sameDay) return { date: "Today", time };
+  if (wasYesterday) return { date: "Yesterday", time };
+  return {
+    date: d.toLocaleDateString([], { month: "short", day: "2-digit" }),
+    time,
+  };
 }
 
 function utcKey(ts, phoneNumber) {
@@ -120,7 +148,7 @@ function HeaderChip({ children, onPress, bg, borderColor }) {
   );
 }
 
-function KpiTile({ label, value, accent, colors }) {
+function KpiTile({ label, value, accent, colors, loading }) {
   return (
     <View
       className="rounded-xl p-3.5"
@@ -143,17 +171,21 @@ function KpiTile({ label, value, accent, colors }) {
       >
         {label}
       </Text>
-      <Text
-        className="font-bold mt-2"
-        style={{
-          color: accent || colors.text,
-          fontFamily: FONT.mono,
-          fontSize: 20,
-          letterSpacing: -0.5,
-        }}
-      >
-        {value}
-      </Text>
+      {loading ? (
+        <Skeleton width={60} height={22} borderRadius={6} style={{ marginTop: 8 }} />
+      ) : (
+        <Text
+          className="font-bold mt-2"
+          style={{
+            color: accent || colors.text,
+            fontFamily: FONT.mono,
+            fontSize: 20,
+            letterSpacing: -0.5,
+          }}
+        >
+          {value}
+        </Text>
+      )}
     </View>
   );
 }
@@ -221,6 +253,7 @@ export default function DashboardScreen({ route }) {
   const { colors, mode, toggle } = useTheme();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const agentName = route?.params?.agentName || "Agent";
   const userId = route?.params?.userId;
 
@@ -236,9 +269,50 @@ export default function DashboardScreen({ route }) {
   const [syncedKeys, setSyncedKeys] = useState(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [rationaleOpen, setRationaleOpen] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerShadow = scrollY.interpolate({
+    inputRange: [0, 12],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
 
   useEffect(() => {
-    requestCallLogPermission().then(setHasPermission);
+    if (Platform.OS !== "android") {
+      setHasPermission(false);
+      return;
+    }
+    (async () => {
+      try {
+        const already = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_CALL_LOG
+        );
+        if (already) {
+          setHasPermission(true);
+          return;
+        }
+        const seen = await AsyncStorage.getItem(PERMISSION_SEEN_KEY);
+        if (seen) {
+          requestCallLogPermission().then(setHasPermission);
+        } else {
+          setRationaleOpen(true);
+        }
+      } catch {
+        requestCallLogPermission().then(setHasPermission);
+      }
+    })();
+  }, []);
+
+  const handleRationaleAllow = useCallback(async () => {
+    setRationaleOpen(false);
+    await AsyncStorage.setItem(PERMISSION_SEEN_KEY, "1");
+    const granted = await requestCallLogPermission();
+    setHasPermission(granted);
+  }, []);
+
+  const handleRationaleDeny = useCallback(async () => {
+    setRationaleOpen(false);
+    await AsyncStorage.setItem(PERMISSION_SEEN_KEY, "1");
   }, []);
 
   useEffect(() => {
@@ -341,7 +415,7 @@ export default function DashboardScreen({ route }) {
 
   const handleSync = useCallback(async () => {
     if (!hasPermission) {
-      Alert.alert("Permission Required", "Call log permission is needed.");
+      toast.show({ message: "Call log permission is needed", type: "error" });
       return;
     }
 
@@ -363,7 +437,7 @@ export default function DashboardScreen({ route }) {
     });
 
     if (newLogs.length === 0) {
-      Alert.alert("Nothing to Sync", "No new call logs to sync.");
+      toast.show({ message: "No new call logs to sync", type: "info" });
       return;
     }
 
@@ -385,12 +459,15 @@ export default function DashboardScreen({ route }) {
         SYNC_STATE_KEY,
         JSON.stringify({ userId, lastSync: now, syncedCount: newSyncedCount })
       );
-      Alert.alert("Synced", `${payload.length} new call logs synced.`);
+      toast.show({
+        message: `Synced ${payload.length} call log${payload.length === 1 ? "" : "s"}`,
+        type: "success",
+      });
       fetchKpi();
       fetchSyncedKeys();
     } catch (err) {
       const msg = err.response?.data?.message || err.message || "Sync failed";
-      Alert.alert("Sync Error", msg);
+      toast.show({ message: msg, type: "error", duration: 3200 });
     } finally {
       setSyncing(false);
     }
@@ -403,6 +480,7 @@ export default function DashboardScreen({ route }) {
     hasPermission,
     fetchKpi,
     fetchSyncedKeys,
+    toast,
   ]);
 
   const unsyncedCount = Math.max(0, callLogs.length - syncedCount);
@@ -441,9 +519,32 @@ export default function DashboardScreen({ route }) {
       style={{ backgroundColor: colors.surface }}
       edges={[]}
     >
-      <View style={{ paddingTop: 10 }}>
+      <Animated.View
+        style={{
+          paddingTop: 22,
+          backgroundColor: colors.surface,
+          zIndex: 5,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: headerShadow.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 0.12],
+          }),
+          shadowRadius: 8,
+          elevation: headerShadow.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 4],
+          }),
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          opacity: headerShadow.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 1],
+          }),
+        }}
+      >
         {/* Top bar: brand + avatar (avatar opens settings) */}
-        <View className="flex-row items-center justify-between px-5 pb-1">
+        <View className="flex-row items-center justify-between px-5 pb-2">
           <Text
             className="text-[22px] font-bold"
             style={{
@@ -468,12 +569,17 @@ export default function DashboardScreen({ route }) {
             </View>
           </PressableScale>
         </View>
-      </View>
+      </Animated.View>
 
-      <ScrollView
+      <Animated.ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false }
+        )}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -501,68 +607,155 @@ export default function DashboardScreen({ route }) {
           </View>
         </FadeSlideIn>
 
-        {/* Session card */}
+        {/* Session card — hero green */}
         <FadeSlideIn delay={120}>
           <View className="px-5 mt-4">
             <View
-              className="rounded-xl p-4 flex-row items-center"
+              className="rounded-xl overflow-hidden"
               style={{
-                backgroundColor: colors.card,
-                borderWidth: 1,
-                borderColor: colors.border,
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 14,
+                elevation: 8,
               }}
             >
-              <View
-                className="w-12 h-12 rounded-xl items-center justify-center mr-4"
-                style={{ backgroundColor: colors.glass }}
+              {/* Decorative gradient + rings */}
+              <Svg
+                width="100%"
+                height="100%"
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+                preserveAspectRatio="none"
               >
-                <Icon name="phone" size={22} color={colors.text} />
-              </View>
-              <View className="flex-1">
-                <View className="flex-row justify-between items-center">
-                  <Text
-                    className="text-[12px]"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    Call Logs in this session
-                  </Text>
-                  <Text
-                    className="text-[13px] font-bold"
-                    style={{ color: colors.text, fontFamily: FONT.mono }}
-                  >
-                    {callLogs.length} items
-                  </Text>
+                <Defs>
+                  <RadialGradient id="sg1" cx="80%" cy="20%" rx="60%" ry="60%">
+                    <Stop offset="0" stopColor="#fff" stopOpacity="0.32" />
+                    <Stop offset="1" stopColor="#fff" stopOpacity="0" />
+                  </RadialGradient>
+                  <RadialGradient id="sg2" cx="0%" cy="100%" rx="60%" ry="60%">
+                    <Stop offset="0" stopColor="#fff" stopOpacity="0.18" />
+                    <Stop offset="1" stopColor="#fff" stopOpacity="0" />
+                  </RadialGradient>
+                </Defs>
+                <Rect x="0" y="0" width="100%" height="100%" fill="url(#sg1)" />
+                <Rect x="0" y="0" width="100%" height="100%" fill="url(#sg2)" />
+              </Svg>
+              <Svg
+                width="180"
+                height="180"
+                style={{ position: "absolute", top: -70, right: -60 }}
+                pointerEvents="none"
+              >
+                <SvgCircle
+                  cx="90"
+                  cy="90"
+                  r="80"
+                  stroke="#fff"
+                  strokeWidth="1"
+                  strokeOpacity="0.18"
+                  fill="none"
+                />
+                <SvgCircle
+                  cx="90"
+                  cy="90"
+                  r="55"
+                  stroke="#fff"
+                  strokeWidth="1"
+                  strokeOpacity="0.12"
+                  fill="none"
+                />
+                <SvgCircle
+                  cx="90"
+                  cy="90"
+                  r="32"
+                  fill="#fff"
+                  fillOpacity="0.06"
+                />
+              </Svg>
+
+              {/* Card content */}
+              <View className="flex-row items-center p-4">
+                <View
+                  className="w-12 h-12 rounded-xl items-center justify-center mr-4"
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.22)",
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.25)",
+                  }}
+                >
+                  <Icon name="phone" size={22} color="#fff" />
                 </View>
-                <View className="flex-row justify-between items-center mt-1.5">
-                  <Text
-                    className="text-[12px]"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    Session Started
-                  </Text>
-                  <Text
-                    className="text-[12px]"
-                    style={{ color: colors.text, fontFamily: FONT.mono }}
-                  >
-                    {loginTime ? formatTime(loginTime) : "--:--"}
-                  </Text>
-                </View>
-                <View className="flex-row justify-between items-center mt-1">
-                  <Text
-                    className="text-[12px]"
-                    style={{ color: colors.textSecondary }}
-                  >
-                    Last Sync
-                  </Text>
-                  <Text
-                    className="text-[12px]"
+                <View className="flex-1">
+                  <View className="flex-row justify-between items-center">
+                    <Text
+                      className="text-[11px] font-semibold"
+                      style={{
+                        color: "rgba(255,255,255,0.78)",
+                        fontFamily: FONT.mono,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      Call Logs in this session
+                    </Text>
+                    <Text
+                      className="text-[13px] font-bold"
+                      style={{ color: "#fff", fontFamily: FONT.mono }}
+                    >
+                      {callLogs.length} items
+                    </Text>
+                  </View>
+                  <View
+                    className="my-2"
                     style={{
-                      color: lastSync ? colors.green : colors.muted,
-                      fontFamily: FONT.mono,
+                      height: 1,
+                      backgroundColor: "rgba(255,255,255,0.18)",
                     }}
-                  >
-                    {lastSync ? formatTime(lastSync) : "Not yet"}
-                  </Text>
+                  />
+                  <View className="flex-row justify-between items-center">
+                    <Text
+                      className="text-[11px] font-semibold"
+                      style={{
+                        color: "rgba(255,255,255,0.78)",
+                        fontFamily: FONT.mono,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      Session Started
+                    </Text>
+                    <Text
+                      className="text-[12px]"
+                      style={{ color: "#fff", fontFamily: FONT.mono }}
+                    >
+                      {loginTime ? formatTime(loginTime) : "--:--"}
+                    </Text>
+                  </View>
+                  <View className="flex-row justify-between items-center mt-1.5">
+                    <Text
+                      className="text-[11px] font-semibold"
+                      style={{
+                        color: "rgba(255,255,255,0.78)",
+                        fontFamily: FONT.mono,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      Last Sync
+                    </Text>
+                    <View
+                      className="px-2 py-0.5 rounded-full"
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.22)",
+                      }}
+                    >
+                      <Text
+                        className="text-[11px] font-bold"
+                        style={{ color: "#fff", fontFamily: FONT.mono }}
+                      >
+                        {lastSync ? formatTime(lastSync) : "Not yet"}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               </View>
             </View>
@@ -584,42 +777,48 @@ export default function DashboardScreen({ route }) {
                 value={kpi?.total_called ?? 0}
                 accent={colors.primary}
                 colors={colors}
+                loading={!kpi && loadingKpi}
               />
               <KpiTile
                 label="Total Order"
                 value={kpi?.total_orders ?? 0}
-                accent={colors.blue}
+                accent={colors.text}
                 colors={colors}
+                loading={!kpi && loadingKpi}
               />
             </View>
             <View className="flex-row mt-2.5" style={{ gap: 10 }}>
               <KpiTile
                 label="Total Attempts"
                 value={kpi?.total_attempts ?? 0}
-                accent={colors.amber}
+                accent={colors.text}
                 colors={colors}
+                loading={!kpi && loadingKpi}
               />
               <KpiTile
                 label="Total Talk Time"
                 value={formatSeconds(
                   kpi?.total_talk_time ?? kpi?.total_time ?? 0
                 )}
-                accent={colors.text}
+                accent={colors.blue}
                 colors={colors}
+                loading={!kpi && loadingKpi}
               />
             </View>
             <View className="flex-row mt-2.5" style={{ gap: 10 }}>
               <KpiTile
                 label="Riders"
                 value={kpi?.riders_called ?? 0}
-                accent={colors.amber}
+                accent={colors.text}
                 colors={colors}
+                loading={!kpi && loadingKpi}
               />
               <KpiTile
                 label="Customers"
                 value={kpi?.customers_called ?? 0}
-                accent={colors.green}
+                accent={colors.text}
                 colors={colors}
+                loading={!kpi && loadingKpi}
               />
             </View>
           </View>
@@ -657,20 +856,49 @@ export default function DashboardScreen({ route }) {
               }}
             >
               {recentCalls.length === 0 ? (
-                <View className="py-10 items-center">
-                  <Text
-                    className="text-[12px]"
-                    style={{
-                      color: colors.muted,
-                      fontFamily: FONT.mono,
-                      letterSpacing: 0.4,
-                    }}
-                  >
-                    {loadingLogs
-                      ? "Loading calls..."
-                      : "No calls in this session yet"}
-                  </Text>
-                </View>
+                loadingLogs ? (
+                  <View>
+                    {[0, 1, 2].map((i) => (
+                      <View
+                        key={i}
+                        className="flex-row items-center py-3"
+                        style={{
+                          borderTopWidth: i === 0 ? 0 : 1,
+                          borderTopColor: colors.border,
+                        }}
+                      >
+                        <Skeleton
+                          width={40}
+                          height={40}
+                          borderRadius={20}
+                          style={{ marginRight: 12 }}
+                        />
+                        <View className="flex-1">
+                          <Skeleton width={"70%"} height={14} />
+                          <Skeleton
+                            width={"50%"}
+                            height={11}
+                            style={{ marginTop: 6 }}
+                          />
+                        </View>
+                        <Skeleton width={50} height={12} />
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View className="py-10 items-center">
+                    <Text
+                      className="text-[12px]"
+                      style={{
+                        color: colors.muted,
+                        fontFamily: FONT.mono,
+                        letterSpacing: 0.4,
+                      }}
+                    >
+                      No calls in this session yet
+                    </Text>
+                  </View>
+                )
               ) : (
                 recentCalls.map((log, idx) => {
                   const k = utcKey(log.timestamp, log.phoneNumber);
@@ -694,7 +922,7 @@ export default function DashboardScreen({ route }) {
             </View>
           </View>
         </FadeSlideIn>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Bottom Sync Button */}
       <View
@@ -709,17 +937,21 @@ export default function DashboardScreen({ route }) {
           backgroundColor: colors.surface,
         }}
       >
-        <PressableScale onPress={handleSync} disabled={syncing}>
+        <PressableScale onPress={handleSync} disabled={syncing || unsyncedCount === 0}>
           <View
             className="rounded-full items-center justify-center"
             style={{
-              backgroundColor: syncing ? colors.primaryDim : colors.primary,
+              backgroundColor: syncing
+                ? colors.primaryDim
+                : unsyncedCount === 0
+                ? colors.glass
+                : colors.primary,
               paddingVertical: 16,
               shadowColor: colors.primary,
               shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: syncing ? 0 : 0.32,
+              shadowOpacity: syncing || unsyncedCount === 0 ? 0 : 0.32,
               shadowRadius: 14,
-              elevation: syncing ? 0 : 10,
+              elevation: syncing || unsyncedCount === 0 ? 0 : 10,
             }}
           >
             {syncing ? (
@@ -740,12 +972,14 @@ export default function DashboardScreen({ route }) {
               <Text
                 className="text-[15px] font-bold"
                 style={{
-                  color: "#fff",
+                  color: unsyncedCount === 0 ? colors.muted : "#fff",
                   fontFamily: FONT.mono,
                   letterSpacing: 0.4,
                 }}
               >
-                Sync ({callLogs.length} items)
+                {unsyncedCount > 0
+                  ? `Sync (${unsyncedCount} new)`
+                  : "All up to date"}
               </Text>
             )}
           </View>
@@ -765,6 +999,12 @@ export default function DashboardScreen({ route }) {
         onLogout={handleLogout}
         hasUnsynced={hasUnsynced}
         colors={colors}
+      />
+
+      <PermissionRationale
+        open={rationaleOpen}
+        onAllow={handleRationaleAllow}
+        onDeny={handleRationaleDeny}
       />
     </SafeAreaView>
   );

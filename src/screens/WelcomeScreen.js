@@ -100,7 +100,7 @@ function AgentRow({ user, selected, onSelect, colors, index }) {
   );
 }
 
-function AgentPickerSheet({ open, onClose, onSubmit, colors, mode }) {
+function AgentPickerSheet({ open, onClose, onSubmit, colors }) {
   const insets = useSafeAreaInsets();
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
@@ -386,7 +386,7 @@ export default function WelcomeScreen({ onSubmit }) {
       style={{ backgroundColor: bg }}
       edges={[]}
     >
-      <View className="flex-1" style={{ paddingTop: 8 }}>
+      <View className="flex-1" style={{ paddingTop: 18 }}>
         {/* Soft blurred orbs background */}
         <BlurOrbs color={colors.primary} mode={mode} />
 
@@ -431,27 +431,29 @@ export default function WelcomeScreen({ onSubmit }) {
             </Animated.View>
           </FadeSlideIn>
 
-          <FadeSlideIn delay={220}>
-            <View className="items-center mt-4">
+          <FadeSlideIn delay={220} style={{ alignSelf: "stretch" }}>
+            <View className="mt-4" style={{ width: "100%" }}>
               <Text
-                className="text-[26px] font-bold text-center"
+                className="text-[26px] font-bold"
                 style={{
                   color: colors.text,
                   letterSpacing: -0.6,
                   lineHeight: 32,
+                  textAlign: "left",
                 }}
               >
                 Track Every Call,{"\n"}Measure Every Win
               </Text>
               <Text
-                className="text-[13px] text-center mt-3 px-4"
+                className="text-[13px] mt-3"
                 style={{
                   color: colors.textSecondary,
                   letterSpacing: 0.2,
                   lineHeight: 19,
+                  textAlign: "left",
                 }}
               >
-                Automatically sync your call logs to monitor CSR and BMO
+                Automatically sync your call logs to monitor CSR and RMO
                 activity from anywhere.
               </Text>
             </View>
@@ -466,7 +468,7 @@ export default function WelcomeScreen({ onSubmit }) {
           >
             <PressableScale onPress={() => setSheetOpen(true)}>
               <View
-                className="rounded-2xl py-4 items-center flex-row justify-center"
+                className="rounded-full py-4 items-center flex-row justify-center"
                 style={{
                   backgroundColor: colors.primary,
                   shadowColor: colors.primary,
@@ -501,7 +503,7 @@ export default function WelcomeScreen({ onSubmit }) {
                   letterSpacing: 0.6,
                 }}
               >
-                CSR & BMO ACTIVITY · ON-FORGE
+                CSR & RMO ACTIVITY · META SUPPORT
               </Text>
             </View>
           </View>
@@ -513,7 +515,6 @@ export default function WelcomeScreen({ onSubmit }) {
         onClose={() => setSheetOpen(false)}
         onSubmit={onSubmit}
         colors={colors}
-        mode={mode}
       />
     </SafeAreaView>
   );

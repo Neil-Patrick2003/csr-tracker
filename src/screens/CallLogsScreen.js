@@ -32,20 +32,35 @@ function formatDuration(sec) {
 
 function formatRecentDate(ts) {
   if (!ts) return { date: "", time: "" };
-  const d = new Date(parseInt(ts, 10));
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  const date = sameDay
-    ? "Today"
-    : d.toLocaleDateString([], { month: "short", day: "2-digit" });
+  const t = parseInt(ts, 10);
+  const d = new Date(t);
+  const now = Date.now();
+  const diff = now - t;
+  const min = Math.floor(diff / 60000);
+  const hr = Math.floor(diff / 3600000);
   const time = d.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
-  return { date, time };
+  if (diff < 45000) return { date: "Just now", time };
+  if (min < 60) return { date: `${min}m ago`, time };
+  if (hr < 6) return { date: `${hr}h ago`, time };
+  const today = new Date(now);
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  const yesterday = new Date(now - 86400000);
+  const wasYesterday =
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate();
+  if (sameDay) return { date: "Today", time };
+  if (wasYesterday) return { date: "Yesterday", time };
+  return {
+    date: d.toLocaleDateString([], { month: "short", day: "2-digit" }),
+    time,
+  };
 }
 
 function utcKey(ts, phoneNumber) {
@@ -418,7 +433,7 @@ export default function CallLogsScreen() {
       style={{ backgroundColor: colors.surface }}
       edges={[]}
     >
-      <View style={{ paddingTop: 10 }}>
+      <View style={{ paddingTop: 22 }}>
         <View className="flex-row items-center justify-between px-5 pb-1">
           <View className="flex-row items-center">
             <PressableScale onPress={() => navigation.goBack()} scaleTo={0.88}>
