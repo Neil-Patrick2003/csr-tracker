@@ -63,10 +63,13 @@ function formatRecentDate(ts) {
   };
 }
 
+// Match server's Asia/Singapore (UTC+8) storage.
+const SG_OFFSET_MS = 8 * 60 * 60 * 1000;
 function utcKey(ts, phoneNumber) {
-  const iso = new Date(parseInt(ts, 10)).toISOString();
-  const [date, timePart] = iso.split("T");
-  const time = timePart.split(".")[0];
+  const t = parseInt(ts, 10);
+  const d = new Date(t + SG_OFFSET_MS);
+  const date = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  const time = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}:${String(d.getUTCSeconds()).padStart(2, "0")}`;
   return `${phoneNumber || ""}|${date}|${time}`;
 }
 

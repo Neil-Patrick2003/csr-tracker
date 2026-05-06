@@ -91,11 +91,27 @@ function formatRecentDate(ts) {
   };
 }
 
+// Server stores call_date / call_time in Asia/Singapore (UTC+8).
+// Build payload timestamp AND fingerprint key in the same timezone.
+const SG_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function sgParts(ts) {
+  const t = parseInt(ts, 10);
+  const d = new Date(t + SG_OFFSET_MS);
+  return {
+    date: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`,
+    time: `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}:${String(d.getUTCSeconds()).padStart(2, "0")}`,
+  };
+}
+
 function utcKey(ts, phoneNumber) {
-  const iso = new Date(parseInt(ts, 10)).toISOString();
-  const [date, timePart] = iso.split("T");
-  const time = timePart.split(".")[0];
+  const { date, time } = sgParts(ts);
   return `${phoneNumber || ""}|${date}|${time}`;
+}
+
+function sgIso(ts) {
+  const { date, time } = sgParts(ts);
+  return `${date}T${time}+08:00`;
 }
 
 function typeIconName(type) {
@@ -447,7 +463,7 @@ export default function DashboardScreen({ route }) {
         phone_number: log.phoneNumber || "",
         type: log.type || "UNKNOWN",
         duration: parseInt(log.duration, 10) || 0,
-        timestamp: new Date(parseInt(log.timestamp, 10)).toISOString(),
+        timestamp: sgIso(log.timestamp),
       }));
 
       await syncCallLogs(userId, payload);
