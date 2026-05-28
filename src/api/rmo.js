@@ -9,8 +9,8 @@ const api = axios.create({
   },
 });
 
-export const login = (search = "") =>
-  api.post("/rmo-orders/login", search ? { search } : {});
+export const login = (email, password) =>
+  api.post("/rmo-orders/login", { email, password });
 
 export const syncCallLogs = (userId, callLogs) =>
   api.post("/call-logs/sync", {

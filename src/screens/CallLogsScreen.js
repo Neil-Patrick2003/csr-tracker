@@ -63,13 +63,20 @@ function formatRecentDate(ts) {
   };
 }
 
-// Match server's Asia/Singapore (UTC+8) storage.
-const SG_OFFSET_MS = 8 * 60 * 60 * 1000;
-function utcKey(ts, phoneNumber) {
-  const t = parseInt(ts, 10);
-  const d = new Date(t + SG_OFFSET_MS);
-  const date = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-  const time = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}:${String(d.getUTCSeconds()).padStart(2, "0")}`;
+function manilaKey(ts, phoneNumber) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(parseInt(ts, 10)));
+  const get = (type) => parts.find((p) => p.type === type)?.value ?? "00";
+  const date = `${get("year")}-${get("month")}-${get("day")}`;
+  const time = `${get("hour")}:${get("minute")}:${get("second")}`;
   return `${phoneNumber || ""}|${date}|${time}`;
 }
 
@@ -169,7 +176,7 @@ function CallRow({ log, synced, colors, isLast }) {
           fontFamily: FONT.mono,
         }}
       >
-        {synced ? "Synced" : "Pending"}
+        {synced ? "Synced" : "Not Synced"}
       </Text>
     </View>
   );
@@ -385,7 +392,7 @@ export default function CallLogsScreen() {
 
   const renderItem = useCallback(
     ({ item, index }) => {
-      const key = utcKey(item.timestamp, item.phoneNumber);
+      const key = manilaKey(item.timestamp, item.phoneNumber);
       return (
         <View className="px-5">
           <View
@@ -423,7 +430,7 @@ export default function CallLogsScreen() {
 
   const syncedCount = logs.reduce(
     (acc, log) =>
-      acc + (syncedKeys.has(utcKey(log.timestamp, log.phoneNumber)) ? 1 : 0),
+      acc + (syncedKeys.has(manilaKey(log.timestamp, log.phoneNumber)) ? 1 : 0),
     0
   );
   const pendingCount = logs.length - syncedCount;

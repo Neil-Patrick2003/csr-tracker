@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { ToastProvider } from "../components/Toast";
 import WelcomeScreen from "../screens/WelcomeScreen";
+import LoginScreen from "../screens/LoginScreen";
 import DashboardScreen from "../screens/DashboardScreen";
 import CallLogsScreen from "../screens/CallLogsScreen";
 import HelpScreen from "../screens/HelpScreen";
@@ -17,7 +18,15 @@ const USER_KEY = "@csr_tracker_user";
 function WelcomeWrapper({ navigation }) {
   return (
     <WelcomeScreen
-      onSubmit={async ({ userId, agentName }) => {
+      onGetStarted={() => navigation.navigate("Login")}
+    />
+  );
+}
+
+function LoginWrapper({ navigation }) {
+  return (
+    <LoginScreen
+      onLogin={async ({ userId, agentName }) => {
         await AsyncStorage.setItem(USER_KEY, JSON.stringify({ userId, agentName }));
         navigation.replace("Dashboard", { userId, agentName });
       }}
@@ -59,6 +68,7 @@ function AppStack() {
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeWrapper} />
+      <Stack.Screen name="Login" component={LoginWrapper} />
       <Stack.Screen
         name="Dashboard"
         component={DashboardScreen}

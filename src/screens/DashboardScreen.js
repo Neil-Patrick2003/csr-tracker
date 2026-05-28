@@ -36,7 +36,6 @@ import Skeleton from "../components/Skeleton";
 import PermissionRationale from "../components/PermissionRationale";
 
 const LOGIN_TIME_KEY = "@csr_tracker_login_time";
-const SYNC_STATE_KEY = "@csr_tracker_sync_state";
 const PERMISSION_SEEN_KEY = "@csr_tracker_permission_seen";
 
 function formatSeconds(sec) {
@@ -91,26 +90,31 @@ function formatRecentDate(ts) {
   };
 }
 
-// Server stores call_date / call_time in Asia/Singapore (UTC+8).
-// Build payload timestamp AND fingerprint key in the same timezone.
-const SG_OFFSET_MS = 8 * 60 * 60 * 1000;
-
-function sgParts(ts) {
-  const t = parseInt(ts, 10);
-  const d = new Date(t + SG_OFFSET_MS);
+function manilaParts(ts) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(parseInt(ts, 10)));
+  const get = (type) => parts.find((p) => p.type === type)?.value ?? "00";
   return {
-    date: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`,
-    time: `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}:${String(d.getUTCSeconds()).padStart(2, "0")}`,
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    time: `${get("hour")}:${get("minute")}:${get("second")}`,
   };
 }
 
-function utcKey(ts, phoneNumber) {
-  const { date, time } = sgParts(ts);
+function manilaKey(ts, phoneNumber) {
+  const { date, time } = manilaParts(ts);
   return `${phoneNumber || ""}|${date}|${time}`;
 }
 
-function sgIso(ts) {
-  const { date, time } = sgParts(ts);
+function manilaIso(ts) {
+  const { date, time } = manilaParts(ts);
   return `${date}T${time}+08:00`;
 }
 
@@ -259,7 +263,7 @@ function CallRow({ log, synced, colors }) {
           fontFamily: FONT.mono,
         }}
       >
-        {synced ? "Synced" : "Pending"}
+        {synced ? "Synced" : "Not Synced"}
       </Text>
     </View>
   );
@@ -280,7 +284,6 @@ export default function DashboardScreen({ route }) {
   const [loadingKpi, setLoadingKpi] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
-  const [syncedCount, setSyncedCount] = useState(0);
   const [kpi, setKpi] = useState(null);
   const [syncedKeys, setSyncedKeys] = useState(new Set());
   const [refreshing, setRefreshing] = useState(false);
@@ -343,18 +346,6 @@ export default function DashboardScreen({ route }) {
       const now = Date.now();
       setLoginTime(now);
       AsyncStorage.setItem(LOGIN_TIME_KEY, JSON.stringify({ userId, time: now }));
-    });
-  }, [userId]);
-
-  useEffect(() => {
-    AsyncStorage.getItem(SYNC_STATE_KEY).then((val) => {
-      if (val) {
-        const saved = JSON.parse(val);
-        if (saved.userId === userId) {
-          setLastSync(saved.lastSync);
-          setSyncedCount(saved.syncedCount);
-        }
-      }
     });
   }, [userId]);
 
@@ -446,14 +437,12 @@ export default function DashboardScreen({ route }) {
     }
     setLoadingLogs(false);
 
-    const sinceTime = lastSync || loginTime;
-    const newLogs = allLogs.filter((log) => {
-      const logTime = log.timestamp ? parseInt(log.timestamp, 10) : 0;
-      return logTime > sinceTime;
-    });
+    const newLogs = allLogs.filter(
+      (log) => !syncedKeys.has(manilaKey(log.timestamp, log.phoneNumber))
+    );
 
     if (newLogs.length === 0) {
-      toast.show({ message: "No new call logs to sync", type: "info" });
+      toast.show({ message: "All call logs are already synced", type: "info" });
       return;
     }
 
@@ -463,18 +452,11 @@ export default function DashboardScreen({ route }) {
         phone_number: log.phoneNumber || "",
         type: log.type || "UNKNOWN",
         duration: parseInt(log.duration, 10) || 0,
-        timestamp: sgIso(log.timestamp),
+        timestamp: manilaIso(log.timestamp),
       }));
 
       await syncCallLogs(userId, payload);
-      const now = Date.now();
-      setLastSync(now);
-      const newSyncedCount = syncedCount + newLogs.length;
-      setSyncedCount(newSyncedCount);
-      AsyncStorage.setItem(
-        SYNC_STATE_KEY,
-        JSON.stringify({ userId, lastSync: now, syncedCount: newSyncedCount })
-      );
+      setLastSync(Date.now());
       toast.show({
         message: `Synced ${payload.length} call log${payload.length === 1 ? "" : "s"}`,
         type: "success",
@@ -489,8 +471,7 @@ export default function DashboardScreen({ route }) {
     }
   }, [
     loginTime,
-    lastSync,
-    syncedCount,
+    syncedKeys,
     callLogs,
     userId,
     hasPermission,
@@ -499,7 +480,9 @@ export default function DashboardScreen({ route }) {
     toast,
   ]);
 
-  const unsyncedCount = Math.max(0, callLogs.length - syncedCount);
+  const unsyncedCount = callLogs.filter(
+    (log) => !syncedKeys.has(manilaKey(log.timestamp, log.phoneNumber))
+  ).length;
   const hasUnsynced = unsyncedCount > 0;
 
   const handleLogout = useCallback(() => {
@@ -519,7 +502,6 @@ export default function DashboardScreen({ route }) {
           await AsyncStorage.multiRemove([
             "@csr_tracker_user",
             LOGIN_TIME_KEY,
-            SYNC_STATE_KEY,
           ]);
           navigation.replace("Welcome");
         },
@@ -917,7 +899,7 @@ export default function DashboardScreen({ route }) {
                 )
               ) : (
                 recentCalls.map((log, idx) => {
-                  const k = utcKey(log.timestamp, log.phoneNumber);
+                  const k = manilaKey(log.timestamp, log.phoneNumber);
                   return (
                     <View
                       key={`${log.timestamp || idx}-${idx}`}

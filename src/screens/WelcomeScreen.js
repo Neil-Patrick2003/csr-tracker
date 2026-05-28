@@ -1,14 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   View,
   Text,
   Image,
-  TextInput,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  FlatList,
-  Alert,
   Animated,
   Easing,
   Dimensions,
@@ -18,11 +12,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Stop, Circle as SvgCircle } from "react-native-svg";
 import { useTheme } from "../context/ThemeContext";
 import { FONT } from "../constants/theme";
-import { login } from "../api/rmo";
 import Icon from "../components/Icon";
 import PressableScale from "../components/PressableScale";
 import FadeSlideIn from "../components/FadeSlideIn";
-import BottomSheet from "../components/BottomSheet";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const ILLUSTRATION = require("../assets/images/welcome-illustration.png");
@@ -57,297 +49,9 @@ function BlurOrbs({ color, mode }) {
   );
 }
 
-function AgentRow({ user, selected, onSelect, colors, index }) {
-  const active = selected?.id === user.id;
-  return (
-    <FadeSlideIn delay={Math.min(index * 25, 300)} offset={8}>
-      <PressableScale onPress={() => onSelect(user)} scaleTo={0.98}>
-        <View className="flex-row items-center px-2 py-3">
-          <View
-            className="w-9 h-9 rounded-full items-center justify-center mr-3"
-            style={{ backgroundColor: active ? colors.primary : colors.glass }}
-          >
-            <Text
-              className="text-[13px] font-bold"
-              style={{
-                color: active ? "#fff" : colors.muted,
-                fontFamily: FONT.mono,
-              }}
-            >
-              {user.name?.charAt(0)?.toUpperCase() || "?"}
-            </Text>
-          </View>
-          <View className="flex-1">
-            <Text
-              className="text-[14px] font-semibold"
-              style={{ color: active ? colors.primary : colors.text }}
-              numberOfLines={1}
-            >
-              {user.name}
-            </Text>
-          </View>
-          {active && (
-            <View
-              className="w-6 h-6 rounded-full items-center justify-center"
-              style={{ backgroundColor: colors.primary }}
-            >
-              <Icon name="check" size={13} color="#fff" />
-            </View>
-          )}
-        </View>
-      </PressableScale>
-    </FadeSlideIn>
-  );
-}
-
-function AgentPickerSheet({ open, onClose, onSubmit, colors }) {
-  const insets = useSafeAreaInsets();
-  const [users, setUsers] = useState([]);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  const fetchUsers = useCallback(async (q = "") => {
-    setLoadingUsers(true);
-    try {
-      const { data } = await login(q);
-      setUsers(data.users || []);
-    } catch (err) {
-      Alert.alert(
-        "Error",
-        err.response?.data?.message || err.message || "Failed to load"
-      );
-    } finally {
-      setLoadingUsers(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (open) {
-      fetchUsers();
-      setSelected(null);
-      setSearch("");
-    }
-  }, [open, fetchUsers]);
-
-  useEffect(() => {
-    if (!open) return;
-    const t = setTimeout(() => fetchUsers(search.trim()), 300);
-    return () => clearTimeout(t);
-  }, [search, fetchUsers, open]);
-
-  const submit = () => {
-    if (!selected) {
-      Alert.alert("Required", "Select your name.");
-      return;
-    }
-    setSubmitting(true);
-    onSubmit({ userId: selected.id, agentName: selected.name });
-  };
-
-  return (
-    <BottomSheet open={open} onClose={onClose}>
-      <View
-        style={{
-          backgroundColor: colors.surface,
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 28,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: -6 },
-          shadowOpacity: 0.25,
-          shadowRadius: 18,
-          elevation: 24,
-        }}
-      >
-        {/* grab handle */}
-        <View className="items-center pt-2.5 pb-1">
-          <View
-            style={{
-              width: 40,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: colors.muted,
-              opacity: 0.4,
-            }}
-          />
-        </View>
-
-        <View className="px-5 pt-2 pb-3 flex-row items-center justify-between">
-          <View>
-            <Text
-              className="text-[10px]"
-              style={{
-                color: colors.muted,
-                fontFamily: FONT.mono,
-                letterSpacing: 0.7,
-              }}
-            >
-              CHOOSE A PROFILE
-            </Text>
-            <Text
-              className="text-[19px] font-bold mt-0.5"
-              style={{ color: colors.text, letterSpacing: -0.3 }}
-            >
-              Who's logging in?
-            </Text>
-          </View>
-          <PressableScale onPress={onClose} scaleTo={0.85} hitSlop={10}>
-            <View
-              className="w-9 h-9 rounded-2xl items-center justify-center"
-              style={{ backgroundColor: colors.glass }}
-            >
-              <Icon name="x" size={14} color={colors.muted} />
-            </View>
-          </PressableScale>
-        </View>
-
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-          <View className="px-5 mb-3">
-            <View
-              className="flex-row items-center rounded-2xl px-4"
-              style={{
-                backgroundColor: colors.card,
-                borderWidth: 1.5,
-                borderColor: colors.border,
-              }}
-            >
-              <Icon name="search" size={15} color={colors.muted} />
-              <TextInput
-                className="flex-1 py-3.5 px-3 text-[14px]"
-                style={{ color: colors.text, fontFamily: FONT.mono }}
-                placeholder="Search agents..."
-                placeholderTextColor={colors.muted}
-                value={search}
-                onChangeText={(t) => {
-                  setSearch(t);
-                  if (selected && !t) setSelected(null);
-                }}
-                autoCapitalize="words"
-              />
-              {search.length > 0 && (
-                <PressableScale
-                  onPress={() => {
-                    setSearch("");
-                    setSelected(null);
-                  }}
-                  scaleTo={0.85}
-                  hitSlop={10}
-                >
-                  <View
-                    className="w-6 h-6 rounded-full items-center justify-center"
-                    style={{ backgroundColor: colors.glass }}
-                  >
-                    <Icon name="x" size={12} color={colors.muted} />
-                  </View>
-                </PressableScale>
-              )}
-            </View>
-          </View>
-
-          <View className="px-5" style={{ minHeight: 240, maxHeight: 340 }}>
-            {loadingUsers && users.length === 0 ? (
-              <View className="flex-1 items-center justify-center py-12">
-                <ActivityIndicator color={colors.primary} size="small" />
-                <Text
-                  className="text-[11px] mt-3"
-                  style={{
-                    color: colors.muted,
-                    fontFamily: FONT.mono,
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  LOADING AGENTS...
-                </Text>
-              </View>
-            ) : (
-              <FlatList
-                data={users}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={({ item, index }) => (
-                  <AgentRow
-                    user={item}
-                    selected={selected}
-                    onSelect={setSelected}
-                    colors={colors}
-                    index={index}
-                  />
-                )}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 8 }}
-                keyboardShouldPersistTaps="handled"
-                ListEmptyComponent={
-                  <View className="items-center py-10">
-                    <View
-                      className="w-12 h-12 rounded-2xl items-center justify-center mb-2"
-                      style={{ backgroundColor: colors.glass }}
-                    >
-                      <Icon name="search" size={20} color={colors.muted} />
-                    </View>
-                    <Text
-                      className="text-[12px] font-semibold"
-                      style={{ color: colors.muted }}
-                    >
-                      {search ? "No agents found" : "No agents available"}
-                    </Text>
-                  </View>
-                }
-              />
-            )}
-          </View>
-
-          <View
-            className="px-5 pt-3"
-            style={{
-              borderTopWidth: 1,
-              borderTopColor: colors.border,
-              paddingBottom: 12,
-            }}
-          >
-            <PressableScale onPress={submit} disabled={!selected || submitting}>
-              <View
-                className="rounded-2xl py-4 items-center"
-                style={{
-                  backgroundColor: selected ? colors.primary : colors.buttonDisabledBg,
-                  opacity: selected ? 1 : 0.4,
-                  shadowColor: selected ? colors.primary : "transparent",
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: selected ? 0.35 : 0,
-                  shadowRadius: 14,
-                  elevation: selected ? 8 : 0,
-                }}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text
-                    className="text-[14px] font-bold"
-                    style={{
-                      color: "#fff",
-                      fontFamily: FONT.mono,
-                      letterSpacing: 0.3,
-                    }}
-                  >
-                    {selected ? `Continue as ${selected.name}` : "Select Agent"}
-                  </Text>
-                )}
-              </View>
-            </PressableScale>
-          </View>
-        </KeyboardAvoidingView>
-        {/* explicit safe-area filler so the bottom of the sheet is always the surface color */}
-        <View style={{ height: insets.bottom, backgroundColor: colors.surface }} />
-      </View>
-    </BottomSheet>
-  );
-}
-
-export default function WelcomeScreen({ onSubmit }) {
+export default function WelcomeScreen({ onGetStarted }) {
   const { colors, mode, toggle } = useTheme();
   const insets = useSafeAreaInsets();
-  const [sheetOpen, setSheetOpen] = useState(false);
 
   // Soft floating animation for illustration
   const float = useRef(new Animated.Value(0)).current;
@@ -466,7 +170,7 @@ export default function WelcomeScreen({ onSubmit }) {
             className="px-6"
             style={{ paddingBottom: insets.bottom + 20 }}
           >
-            <PressableScale onPress={() => setSheetOpen(true)}>
+            <PressableScale onPress={onGetStarted}>
               <View
                 className="rounded-full py-4 items-center flex-row justify-center"
                 style={{
@@ -510,12 +214,6 @@ export default function WelcomeScreen({ onSubmit }) {
         </FadeSlideIn>
       </View>
 
-      <AgentPickerSheet
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        onSubmit={onSubmit}
-        colors={colors}
-      />
     </SafeAreaView>
   );
 }

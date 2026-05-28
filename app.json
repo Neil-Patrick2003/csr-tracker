@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.neilpatrick.csrtracker",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.neilpatrick.csrtracker",
@@ -50,6 +54,10 @@
     "extra": {
       "eas": {
         "projectId": "81fd24c6-ef87-4d90-8ef4-d3d04202e4c5"
+      },
+      "expo-navigation-bar": {
+        "visibility": "hidden",
+        "behavior": "overlay-swipe"
       }
     }
   }
