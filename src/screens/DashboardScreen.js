@@ -464,6 +464,7 @@ export default function DashboardScreen({ route }) {
       fetchKpi();
       fetchSyncedKeys();
     } catch (err) {
+      console.log("Sync error:", err.response?.status, JSON.stringify(err.response?.data) || err.message, err);
       const msg = err.response?.data?.message || err.message || "Sync failed";
       toast.show({ message: msg, type: "error", duration: 3200 });
     } finally {

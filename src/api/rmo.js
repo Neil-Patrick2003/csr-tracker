@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://artemis-dev.on-forge.com/api/v2/public",
+  baseURL: "https://artemis-dev.on-forge.com/api/v1/public",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -9,8 +9,8 @@ const api = axios.create({
   },
 });
 
-export const login = (email, password) =>
-  api.post("/rmo-orders/login", { email, password });
+export const login = (search = "") =>
+  api.get("/rmo-orders/login", search ? { params: { search } } : undefined);
 
 export const syncCallLogs = (userId, callLogs) =>
   api.post("/call-logs/sync", {
@@ -21,7 +21,7 @@ export const syncCallLogs = (userId, callLogs) =>
 export const getCallLogKpi = (userId, date) =>
   api.get("/call-logs/kpi", {
     params: {
-      assignee_user_id: userId,
+        user_id: userId,
       ...(date ? { date } : {}),
     },
   });
@@ -29,10 +29,10 @@ export const getCallLogKpi = (userId, date) =>
 export const getCallLogSummary = (userId, sinceTimestamp) =>
   api.get("/call-logs/summary", {
     params: {
-      assignee_user_id: userId,
+        user_id: userId,
       ...(sinceTimestamp ? { since: sinceTimestamp } : {}),
     },
   });
 
 export const getCallLogs = (userId, sinceMs) =>
-  api.get("/call-logs/list", { params: { assignee_user_id: userId, since: sinceMs } });
+  api.get("/call-logs/list", { params: { user_id: userId, since: sinceMs } });

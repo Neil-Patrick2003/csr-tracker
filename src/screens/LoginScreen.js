@@ -1,485 +1,228 @@
-import { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  Image,
-  TextInput,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Dimensions,
-  ScrollView,
-  Animated,
-  Easing,
-} from "react-native";
+import { useState, useEffect, useCallback } from "react";
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, FlatList } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
-
-const APP_ICON = require("../assets/images/icon.png");
 import { useTheme } from "../context/ThemeContext";
 import { FONT } from "../constants/theme";
 import { login } from "../api/rmo";
-import Icon from "../components/Icon";
-import PressableScale from "../components/PressableScale";
-import FadeSlideIn from "../components/FadeSlideIn";
 
-const { height: SCREEN_H } = Dimensions.get("window");
-const HERO_H = Math.min(SCREEN_H * 0.38, 290);
-const CARD_RADIUS = 32;
-
-function HeroGlow({ color }) {
+function UserRow({ user, selected, onSelect, colors }) {
+  const active = selected?.id === user.id;
   return (
-    <Svg
-      width="100%"
-      height="100%"
-      style={{ position: "absolute", top: 0, left: 0 }}
-      pointerEvents="none"
+    <TouchableOpacity
+      className="flex-row items-center rounded-xl px-4 py-3.5 mb-2"
+      style={{
+        backgroundColor: active ? colors.primaryDim : colors.card,
+        borderWidth: 1.5,
+        borderColor: active ? colors.primary : colors.border,
+      }}
+      onPress={() => onSelect(user)}
+      activeOpacity={0.55}
     >
-      <Defs>
-        <RadialGradient id="hg1" cx="50%" cy="50%" rx="65%" ry="70%">
-          <Stop offset="0" stopColor={color} stopOpacity="0.65" />
-          <Stop offset="1" stopColor={color} stopOpacity="0" />
-        </RadialGradient>
-        <RadialGradient id="hg2" cx="10%" cy="90%" rx="55%" ry="55%">
-          <Stop offset="0" stopColor={color} stopOpacity="0.22" />
-          <Stop offset="1" stopColor={color} stopOpacity="0" />
-        </RadialGradient>
-        <RadialGradient id="hg3" cx="92%" cy="8%" rx="40%" ry="40%">
-          <Stop offset="0" stopColor={color} stopOpacity="0.16" />
-          <Stop offset="1" stopColor={color} stopOpacity="0" />
-        </RadialGradient>
-      </Defs>
-      <Rect x="0" y="0" width="100%" height="100%" fill="url(#hg1)" />
-      <Rect x="0" y="0" width="100%" height="100%" fill="url(#hg2)" />
-      <Rect x="0" y="0" width="100%" height="100%" fill="url(#hg3)" />
-    </Svg>
-  );
-}
-
-function InputField({ label, icon, focused, error, children }) {
-  return (
-    <View style={{ marginBottom: 14 }}>
-      <Text
-        style={{
-          fontSize: 11,
-          fontWeight: "600",
-          color: focused ? "#10B981" : "#4B5563",
-          fontFamily: FONT.mono,
-          letterSpacing: 0.8,
-          marginBottom: 8,
-        }}
-      >
-        {label}
-      </Text>
       <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          borderRadius: 16,
-          borderWidth: 1.5,
-          borderColor: focused
-            ? "#10B981"
-            : error
-            ? "rgba(239,68,68,0.4)"
-            : "rgba(255,255,255,0.07)",
-          paddingHorizontal: 16,
-          height: 54,
-        }}
+        className="w-9 h-9 rounded-full items-center justify-center mr-3"
+        style={{ backgroundColor: active ? colors.primary : colors.glass }}
       >
-        <Icon
-          name={icon}
-          size={16}
-          color={focused ? "#10B981" : "#4B5563"}
-        />
-        {children}
+        <Text className="text-[13px] font-bold" style={{ color: active ? "#fff" : colors.muted }}>
+          {user.name?.charAt(0)?.toUpperCase() || "?"}
+        </Text>
       </View>
-    </View>
+      <View className="flex-1">
+        <Text
+          className="text-[14px] font-semibold"
+          style={{ color: active ? colors.primary : colors.text }}
+          numberOfLines={1}
+        >
+          {user.name}
+        </Text>
+        <Text
+          className="text-[11px] mt-0.5"
+          style={{ color: colors.muted, fontFamily: FONT.mono }}
+          numberOfLines={1}
+        >
+          ID: {user.id}
+        </Text>
+      </View>
+      {active && (
+        <View
+          className="w-6 h-6 rounded-full items-center justify-center"
+          style={{ backgroundColor: colors.primary }}
+        >
+          <Text className="text-[11px] font-bold" style={{ color: "#fff" }}>
+            {"✓"}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
 export default function LoginScreen({ onLogin }) {
-  const { colors } = useTheme();
+  const { colors, mode, toggle } = useTheme();
   const insets = useSafeAreaInsets();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [focusedField, setFocusedField] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const passwordRef = useRef(null);
+  const [users, setUsers] = useState([]);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const float = useRef(new Animated.Value(0)).current;
-  const shakeX = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(float, {
-          toValue: 1,
-          duration: 2800,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(float, {
-          toValue: 0,
-          duration: 2800,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [float]);
-
-  const floatY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -9] });
-
-  const shake = () => {
-    Animated.sequence([
-      Animated.timing(shakeX, { toValue: 12, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeX, { toValue: -12, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeX, { toValue: 8, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeX, { toValue: -8, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeX, { toValue: 0, duration: 55, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError("Email and password are required.");
-      shake();
-      return;
-    }
-    setError("");
-    setLoading(true);
+  const fetchUsers = useCallback(async (q = "") => {
+    setLoadingUsers(true);
     try {
-      const { data } = await login(email.trim(), password);
-      const user = data.user;
-      onLogin({ userId: user.id, agentName: user.name });
+      const { data } = await login(q);
+      const list = data?.users ?? data?.data ?? (Array.isArray(data) ? data : []);
+      setUsers(list || []);
     } catch (err) {
-      const status = err.response?.status;
-      if (status === 401) {
-        setError("Invalid email or password.");
-      } else if (status === 403) {
-        setError("Your account is not authorized for this workspace.");
-      } else {
-        setError(
-          err.response?.data?.message || err.message || "Login failed. Please try again."
-        );
-      }
-      shake();
+      Alert.alert("Error", err.response?.data?.message || err.message || "Failed to load");
     } finally {
-      setLoading(false);
+      setLoadingUsers(false);
     }
-  };
+  }, []);
 
-  const clearError = () => { if (error) setError(""); };
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    const t = setTimeout(() => fetchUsers(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search, fetchUsers]);
+
+  const submit = () => {
+    if (!selected) { Alert.alert("Required", "Select your name."); return; }
+    setSubmitting(true);
+    onLogin({ userId: selected.id, agentName: selected.name });
+  };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={[]}>
-      {/* ── Hero ── always dark for contrast */}
-      <View
-        style={{
-          height: HERO_H + insets.top,
-          backgroundColor: "#060810",
-          overflow: "hidden",
-        }}
-      >
-        <HeroGlow color={colors.primary} />
+    <SafeAreaView className="flex-1" style={{ backgroundColor: colors.ink }} edges={[]}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
+        <View className="flex-1" style={{ paddingTop: insets.top }}>
+          {/* Top bar */}
+          <View className="flex-row justify-end px-5 pt-3 pb-2">
+            <TouchableOpacity
+              className="w-9 h-9 rounded-xl items-center justify-center"
+              style={{ backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.border }}
+              onPress={toggle}
+              activeOpacity={0.6}
+            >
+              <Text className="text-[14px]" style={{ color: colors.muted }}>
+                {mode === "dark" ? "☀︎" : "☾"}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-        <View
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            paddingTop: insets.top,
-          }}
-        >
-          {/* Floating app icon */}
-          <Animated.View
-            style={{ alignItems: "center", transform: [{ translateY: floatY }] }}
-          >
-            <Image
-              source={APP_ICON}
+          {/* Branding */}
+          <View className="items-center mb-8 mt-4">
+            <View
+              className="w-16 h-16 rounded-2xl items-center justify-center mb-4"
               style={{
-                width: 88,
-                height: 88,
-                borderRadius: 22,
+                backgroundColor: colors.primary,
                 shadowColor: colors.primary,
-                shadowOffset: { width: 0, height: 14 },
-                shadowOpacity: 0.65,
-                shadowRadius: 22,
-              }}
-            />
-          </Animated.View>
-
-          <FadeSlideIn delay={160}>
-            <Text
-              style={{
-                color: "#fff",
-                fontFamily: FONT.mono,
-                fontSize: 22,
-                fontWeight: "700",
-                letterSpacing: -0.5,
-                marginTop: 90,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 12,
+                elevation: 8,
               }}
             >
-              CallSync
-            </Text>
-          </FadeSlideIn>
-
-          <FadeSlideIn delay={240}>
-            <Text
-              style={{
-                color: "rgba(255,255,255,0.40)",
-                fontFamily: FONT.mono,
-                fontSize: 10,
-                letterSpacing: 1.4,
-                marginTop: 5,
-              }}
-            >
-              CSR & RMO TRACKER
-            </Text>
-          </FadeSlideIn>
-        </View>
-      </View>
-
-      {/* ── Form card ── overlaps hero bottom */}
-      <KeyboardAvoidingView
-        style={{ flex: 1, marginTop: -CARD_RADIUS }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: colors.surface,
-              borderTopLeftRadius: CARD_RADIUS,
-              borderTopRightRadius: CARD_RADIUS,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: -10 },
-              shadowOpacity: 0.22,
-              shadowRadius: 24,
-              elevation: 24,
-              paddingHorizontal: 24,
-              paddingTop: 16,
-              paddingBottom: insets.bottom + 28,
-            }}
-          >
-            {/* Grab handle */}
-            <View style={{ alignItems: "center", marginBottom: 28 }}>
-              <View
-                style={{
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: colors.subtle,
-                  opacity: 0.5,
-                }}
-              />
-            </View>
-
-            {/* Heading */}
-            <FadeSlideIn delay={100}>
-              <View style={{ marginBottom: 28 }}>
-                <Text
-                  style={{
-                    fontSize: 24,
-                    fontWeight: "700",
-                    color: colors.text,
-                    letterSpacing: -0.5,
-                  }}
-                >
-                  Welcome back
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 13,
-                    color: colors.textSecondary,
-                    marginTop: 5,
-                    lineHeight: 19,
-                  }}
-                >
-                  Sign in with your CSR credentials to continue
-                </Text>
-              </View>
-            </FadeSlideIn>
-
-            {/* Inputs + error — all shake together */}
-            <Animated.View style={{ transform: [{ translateX: shakeX }] }}>
-              {/* Email */}
-              <FadeSlideIn delay={160}>
-                <InputField
-                  label="EMAIL"
-                  icon="mail"
-                  focused={focusedField === "email"}
-                  error={!!error}
-                >
-                  <TextInput
-                    style={{
-                      flex: 1,
-                      paddingHorizontal: 12,
-                      fontSize: 15,
-                      color: colors.text,
-                      fontFamily: FONT.mono,
-                    }}
-                    placeholder="you@company.com"
-                    placeholderTextColor={colors.muted}
-                    value={email}
-                    onChangeText={(t) => { setEmail(t); clearError(); }}
-                    onFocus={() => setFocusedField("email")}
-                    onBlur={() => setFocusedField(null)}
-                    keyboardType="email-address"
-                    returnKeyType="next"
-                    onSubmitEditing={() => passwordRef.current?.focus()}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </InputField>
-              </FadeSlideIn>
-
-              {/* Password */}
-              <FadeSlideIn delay={210}>
-                <InputField
-                  label="PASSWORD"
-                  icon="lock"
-                  focused={focusedField === "password"}
-                  error={!!error}
-                >
-                  <TextInput
-                    ref={passwordRef}
-                    style={{
-                      flex: 1,
-                      paddingHorizontal: 12,
-                      fontSize: 15,
-                      color: colors.text,
-                      fontFamily: FONT.mono,
-                    }}
-                    placeholder="••••••••"
-                    placeholderTextColor={colors.muted}
-                    value={password}
-                    onChangeText={(t) => { setPassword(t); clearError(); }}
-                    onFocus={() => setFocusedField("password")}
-                    onBlur={() => setFocusedField(null)}
-                    secureTextEntry={!showPassword}
-                    returnKeyType="done"
-                    onSubmitEditing={handleLogin}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <PressableScale
-                    onPress={() => setShowPassword((v) => !v)}
-                    scaleTo={0.82}
-                    hitSlop={12}
-                  >
-                    <Icon
-                      name={showPassword ? "eye-off" : "eye"}
-                      size={16}
-                      color={focusedField === "password" ? colors.primary : colors.muted}
-                    />
-                  </PressableScale>
-                </InputField>
-              </FadeSlideIn>
-
-              {/* Error banner */}
-              {error.length > 0 && (
-                <FadeSlideIn delay={0}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      backgroundColor: colors.redDim,
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: colors.redBorder,
-                      paddingHorizontal: 14,
-                      paddingVertical: 11,
-                      marginBottom: 4,
-                    }}
-                  >
-                    <Icon name="alert-circle" size={14} color={colors.red} />
-                    <Text
-                      style={{
-                        flex: 1,
-                        fontSize: 13,
-                        color: colors.red,
-                        fontFamily: FONT.mono,
-                        marginLeft: 10,
-                      }}
-                    >
-                      {error}
-                    </Text>
-                  </View>
-                </FadeSlideIn>
-              )}
-            </Animated.View>
-
-            {/* Sign in button */}
-            <FadeSlideIn delay={280}>
-              <View style={{ marginTop: error ? 18 : 8 }}>
-                <PressableScale onPress={handleLogin} disabled={loading} scaleTo={0.97}>
-                  <View
-                    style={{
-                      backgroundColor: colors.primary,
-                      borderRadius: 16,
-                      height: 56,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexDirection: "row",
-                      opacity: loading ? 0.72 : 1,
-                      shadowColor: colors.primary,
-                      shadowOffset: { width: 0, height: 10 },
-                      shadowOpacity: 0.42,
-                      shadowRadius: 20,
-                      elevation: 14,
-                    }}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <>
-                        <Text
-                          style={{
-                            color: "#fff",
-                            fontSize: 15,
-                            fontWeight: "700",
-                            fontFamily: FONT.mono,
-                            letterSpacing: 0.4,
-                          }}
-                        >
-                          Sign In
-                        </Text>
-                        <View style={{ marginLeft: 8 }}>
-                          <Icon name="chevron-right" size={18} color="#fff" />
-                        </View>
-                      </>
-                    )}
-                  </View>
-                </PressableScale>
-              </View>
-            </FadeSlideIn>
-
-            {/* Footer */}
-            <View style={{ alignItems: "center", marginTop: 28 }}>
-              <Text
-                style={{
-                  fontSize: 10,
-                  color: colors.muted,
-                  fontFamily: FONT.mono,
-                  letterSpacing: 0.9,
-                }}
-              >
-                META SUPPORT · CSR & RMO ACTIVITY
+              <Text className="text-[22px] font-bold" style={{ color: "#fff", fontFamily: FONT.mono }}>
+                CS
               </Text>
             </View>
+            <Text className="text-[22px] font-bold" style={{ color: colors.text, fontFamily: FONT.mono, letterSpacing: -0.5 }}>
+              CallSync
+            </Text>
+            <Text className="text-[13px] mt-2" style={{ color: colors.muted }}>
+              Select your name to continue
+            </Text>
           </View>
-        </ScrollView>
+
+          {/* Search */}
+          <View className="px-5 mb-3">
+            <View
+              className="flex-row items-center rounded-xl px-4"
+              style={{
+                backgroundColor: colors.card,
+                borderWidth: 1.5,
+                borderColor: colors.border,
+              }}
+            >
+              <Text className="text-[14px] mr-2.5" style={{ color: colors.muted }}>{"⌕"}</Text>
+              <TextInput
+                className="flex-1 py-3 text-[14px]"
+                style={{ color: colors.text, fontFamily: FONT.mono }}
+                placeholder="Search agents..."
+                placeholderTextColor={colors.muted}
+                value={search}
+                onChangeText={(t) => { setSearch(t); if (selected && !t) setSelected(null); }}
+                autoCapitalize="words"
+              />
+              {search.length > 0 && (
+                <TouchableOpacity onPress={() => { setSearch(""); setSelected(null); }} activeOpacity={0.5}>
+                  <Text className="text-[16px]" style={{ color: colors.muted }}>{"×"}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* List */}
+          <View className="flex-1 px-5 mb-2">
+            {loadingUsers && users.length === 0 ? (
+              <View className="flex-1 items-center justify-center">
+                <ActivityIndicator color={colors.primary} size="small" />
+                <Text className="text-[11px] mt-2" style={{ color: colors.muted }}>Loading agents...</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={users}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={({ item }) => <UserRow user={item} selected={selected} onSelect={setSelected} colors={colors} />}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                ListEmptyComponent={
+                  <View className="items-center py-16">
+                    <Text className="text-[24px] mb-3" style={{ opacity: 0.3 }}>{"\u{1F50D}"}</Text>
+                    <Text className="text-[13px] font-semibold" style={{ color: colors.muted }}>
+                      {search ? "No agents found" : "No agents available"}
+                    </Text>
+                  </View>
+                }
+              />
+            )}
+          </View>
+
+          {/* Submit */}
+          <View
+            className="px-5 pt-3 pb-3"
+            style={{
+              backgroundColor: colors.surface,
+              borderTopWidth: 1,
+              borderTopColor: colors.border,
+              paddingBottom: insets.bottom + 12,
+            }}
+          >
+            <TouchableOpacity
+              className="rounded-xl py-4 items-center"
+              style={{
+                backgroundColor: selected ? colors.primary : colors.buttonDisabledBg,
+                opacity: selected ? 1 : 0.4,
+                shadowColor: selected ? colors.primary : "transparent",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: selected ? 0.3 : 0,
+                shadowRadius: 12,
+                elevation: selected ? 6 : 0,
+              }}
+              onPress={submit}
+              disabled={!selected || submitting}
+              activeOpacity={0.7}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text className="text-[14px] font-bold" style={{ color: "#fff", fontFamily: FONT.mono }}>
+                  {selected ? `Continue as ${selected.name}` : "Select Agent"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
