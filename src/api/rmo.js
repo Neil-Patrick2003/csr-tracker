@@ -1,17 +1,25 @@
 import axios from "axios";
+import { REACT_APP_API_BASE_URL, REACT_APP_API_KEY } from "../config/env";
+
+const baseURL = "https://artemis.ph/api/v1/public";
+const apiKey = "art_optpdFBxXGN7tt4sq0Pi9BeIs7TaRKi3pTuIDa21";
+
+console.log("API Base URL:", baseURL);
+console.log("API Key:", apiKey ? "Provided" : "Not Provided");
 
 const api = axios.create({
-  baseURL: " https://stretchy-wanetta-unwinning.ngrok-free.dev/api/v1/public",
+  baseURL,
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
-    "X-API-Key": "art_Tuu7isqVQ4CbqUUPrwsnriLPvw3tI0mX33RZx5Xr",
+    "X-API-Key": apiKey,
   },
 });
 
 export const login = (search = "") =>
   api.post(
     "/rmo-orders/login",
+    null,
     search ? { params: { search } } : undefined
   );
 

@@ -58,7 +58,9 @@
       "expo-navigation-bar": {
         "visibility": "hidden",
         "behavior": "overlay-swipe"
-      }
+      },
+      "apiBaseUrl": "https://stretchy-wanetta-unwinning.ngrok-free.dev/api/v1/public",
+      "apiKey": "art_Tuu7isqVQ4CbqUUPrwsnriLPvw3tI0mX33RZx5Xr"
     }
   }
 }
