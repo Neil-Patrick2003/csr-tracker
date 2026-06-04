@@ -35,13 +35,6 @@ function UserRow({ user, selected, onSelect, colors }) {
         >
           {user.name}
         </Text>
-        <Text
-          className="text-[11px] mt-0.5"
-          style={{ color: colors.muted, fontFamily: FONT.mono }}
-          numberOfLines={1}
-        >
-          ID: {user.id}
-        </Text>
       </View>
       {active && (
         <View

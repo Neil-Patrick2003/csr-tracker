@@ -1,16 +1,19 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://artemis-dev.on-forge.com/api/v1/public",
+  baseURL: " https://stretchy-wanetta-unwinning.ngrok-free.dev/api/v1/public",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
-    "X-API-Key": "art_4TGgV4OLrHp5NCGXXuAi3pu0IV9F9eEhRiqLbjFj",
+    "X-API-Key": "art_Tuu7isqVQ4CbqUUPrwsnriLPvw3tI0mX33RZx5Xr",
   },
 });
 
 export const login = (search = "") =>
-  api.get("/rmo-orders/login", search ? { params: { search } } : undefined);
+  api.post(
+    "/rmo-orders/login",
+    search ? { params: { search } } : undefined
+  );
 
 export const syncCallLogs = (userId, callLogs) =>
   api.post("/call-logs/sync", {
