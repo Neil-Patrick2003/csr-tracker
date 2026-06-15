@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web"
+    "setup-env": "node scripts/setup-env.mjs",
+    "start": "npm run setup-env && expo start",
+    "android": "npm run setup-env && expo run:android",
+    "ios": "npm run setup-env && expo run:ios",
+    "web": "npm run setup-env && expo start --web"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -29,5 +30,9 @@
     "react-native-svg": "15.12.1",
     "tailwindcss": "^3.4"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "babel-plugin-dotenv": "^0.1.1",
+    "dotenv-cli": "^11.0.0"
+  }
 }
